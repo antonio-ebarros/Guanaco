@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guanaco — IA Local</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <aside id="side">
+    <div class="brand">
+      <img src="guanaco-logo.png" alt="Guanaco" class="brand-logo">
+      <div>
+        <div class="brand-title">Guanaco</div>
+        <div class="brand-sub">100% local e privado</div>
+      </div>
+    </div>
+
+    <div class="nav-tabs">
+      <button class="nav-tab active" data-view="chat" type="button">Conversa</button>
+      <button class="nav-tab" data-view="models" type="button">Modelos</button>
+      <button class="nav-tab" data-view="control" type="button">Controle</button>
+    </div>
+
+    <button id="btn-new-chat" class="btn-primary full" type="button">+ Nova Conversa</button>
+
+    <nav id="conv-list" class="conv-list" aria-label="Conversas"></nav>
+
+    <div id="engine-card" class="engine-card">
+      <div class="engine-row">
+        <span id="engine-dot" class="dot"></span>
+        <span id="engine-label">Verificando motor…</span>
+      </div>
+      <div id="engine-mem" class="engine-sub">Lendo hardware…</div>
+      <button id="btn-start-engine" class="btn-ghost small" type="button" hidden>Ligar Motor de IA</button>
+    </div>
+  </aside>
+
+  <main>
+    <!-- VIEW: CONVERSA -->
+    <section id="view-chat" class="view active">
+      <header class="view-head">
+        <h1 id="chat-title">Nova conversa</h1>
+        <div class="head-right">
+          <select id="model-select" aria-label="Modelo ativo"></select>
+        </div>
+      </header>
+
+      <div id="chat-log" class="chat-log"></div>
+
+      <form id="composer" class="composer">
+        <div id="chips" class="chips"></div>
+        <div class="input-box">
+          <div id="input" class="md-editor" contenteditable="true" role="textbox" aria-multiline="true"
+               data-placeholder="Digite sua mensagem em Markdown… (# título, - lista, > citação, **negrito** — Enter envia, Shift+Enter quebra linha)"></div>
+          <div class="input-actions">
+            <button id="btn-attach" class="btn-ghost small" type="button" title="Anexar arquivo de texto ou imagem">Anexar</button>
+            <button id="btn-send" class="btn-primary" type="submit">Enviar</button>
+          </div>
+        </div>
+        <input id="file-input" type="file" multiple hidden accept="image/*,text/*,.md,.json,.csv,.py,.js,.ts,.rs,.html,.css,.log">
+      </form>
+    </section>
+
+    <!-- VIEW: MODELOS -->
+    <section id="view-models" class="view">
+      <header class="view-head">
+        <h1>Modelos de IA</h1>
+        <button id="btn-refresh-models" class="btn-ghost small" type="button">Atualizar</button>
+      </header>
+
+      <div class="scroll-body">
+        <div id="hw-banner" class="info-card">Detectando hardware do seu computador…</div>
+
+        <div id="pull-card" class="info-card" hidden>
+          <div class="row-between">
+            <strong id="pull-title">Baixando modelo…</strong>
+            <span id="pull-pct">0%</span>
+          </div>
+          <div class="progress-track"><div id="pull-fill" class="progress-fill"></div></div>
+          <div id="pull-status" class="muted">Iniciando download…</div>
+        </div>
+
+        <h2 class="sec-title">Recomendados para você</h2>
+        <div id="preset-grid" class="card-grid"></div>
+
+        <h2 class="sec-title">Instalados neste computador</h2>
+        <div id="installed-list" class="list-box"></div>
+
+        <h2 class="sec-title">Baixar outro modelo pelo nome</h2>
+        <form id="custom-pull-form" class="inline-form">
+          <input id="custom-model-name" type="text" placeholder="Ex: mistral:7b, codellama:7b, phi3:mini">
+          <button class="btn-primary" type="submit">Baixar</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- VIEW: CONTROLE & TRANSPARÊNCIA -->
+    <section id="view-control" class="view">
+      <header class="view-head">
+        <h1>Controle e Transparência</h1>
+        <button id="btn-refresh-control" class="btn-ghost small" type="button">Atualizar</button>
+      </header>
+
+      <div class="scroll-body">
+        <div class="card-grid">
+          <div class="info-card">
+            <div class="card-kicker">PRIVACIDADE E REDE</div>
+            <div class="card-big">100% Local</div>
+            <p class="muted">Suas conversas e arquivos ficam apenas neste computador. O motor responde somente em <code>127.0.0.1:11434</code>.</p>
+          </div>
+
+          <div class="info-card">
+            <div class="card-kicker">COMPUTADOR</div>
+            <div id="ctrl-hw" class="card-big">—</div>
+            <p id="ctrl-gpu" class="muted">Verificando GPU…</p>
+          </div>
+        </div>
+
+        <h2 class="sec-title">Memória em uso agora (modelos carregados na RAM/VRAM)</h2>
+        <div id="running-list" class="list-box"></div>
+
+        <h2 class="sec-title">Armazenamento no disco</h2>
+        <div id="storage-card" class="info-card"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="md.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

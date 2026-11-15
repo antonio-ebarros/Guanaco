@@ -1,0 +1,391 @@
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::process::Command;
+use sysinfo::System;
+use tauri::{AppHandle, Emitter, Manager};
+
+const OLLAMA_URL: &str = "http://127.0.0.1:11434";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemInfo {
+    pub os: String,
+    pub cpu_name: String,
+    pub cpu_cores: usize,
+    pub total_ram_gb: f64,
+    pub free_ram_gb: f64,
+    pub gpu_name: Option<String>,
+    pub ollama_installed: bool,
+    pub ollama_running: bool,
+    pub models_dir: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PullProgress {
+    pub model: String,
+    pub status: String,
+    pub completed: u64,
+    pub total: u64,
+    pub percent: f64,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ChatMessageIn {
+    pub role: String,
+    pub content: String,
+    #[serde(default)]
+    pub images: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatRequest {
+    pub conv_id: String,
+    pub model: String,
+    pub messages: Vec<ChatMessageIn>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEvent {
+    pub conv_id: String,
+    pub delta: String,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+fn find_ollama_binary() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        if Command::new("where").arg("ollama").output().map(|o| o.status.success()).unwrap_or(false) {
+            return Some("ollama".to_string());
+        }
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let p = PathBuf::from(local).join("Programs").join("Ollama").join("ollama.exe");
+            if p.is_file() {
+                return Some(p.to_string_lossy().to_string());
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if Command::new("which").arg("ollama").output().map(|o| o.status.success()).unwrap_or(false) {
+            return Some("ollama".to_string());
+        }
+        for p in ["/usr/local/bin/ollama", "/usr/bin/ollama"] {
+            if PathBuf::from(p).is_file() {
+                return Some(p.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn detect_gpu() -> Option<String> {
+    let out = Command::new("nvidia-smi")
+        .args(["--query-gpu=name,memory.total", "--format=csv,noheader"])
+        .output()
+        .ok()?;
+    if out.status.success() {
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !s.is_empty() {
+            return Some(s.lines().next().unwrap_or("").to_string());
+        }
+    }
+    None
+}
+
+fn default_models_dir() -> String {
+    if let Ok(v) = std::env::var("OLLAMA_MODELS") {
+        if !v.trim().is_empty() {
+            return v;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            return PathBuf::from(home).join(".ollama").join("models").to_string_lossy().to_string();
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(".ollama").join("models").to_string_lossy().to_string();
+        }
+    }
+    "~/.ollama/models".to_string()
+}
+
+async fn is_ollama_up() -> bool {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1200))
+        .build()
+        .ok();
+    let Some(c) = client else { return false };
+    c.get(format!("{OLLAMA_URL}/api/tags"))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+async fn get_system_info() -> SystemInfo {
+    let mut sys = System::new_all();
+    sys.refresh_memory();
+    let cpu_name = sys
+        .cpus()
+        .first()
+        .map(|c| c.brand().trim().to_string())
+        .unwrap_or_else(|| "CPU".to_string());
+    let total_gb = sys.total_memory() as f64 / 1_073_741_824.0;
+    let free_gb = sys.available_memory() as f64 / 1_073_741_824.0;
+
+    SystemInfo {
+        os: std::env::consts::OS.to_string(),
+        cpu_name,
+        cpu_cores: sys.cpus().len(),
+        total_ram_gb: (total_gb * 10.0).round() / 10.0,
+        free_ram_gb: (free_gb * 10.0).round() / 10.0,
+        gpu_name: detect_gpu(),
+        ollama_installed: find_ollama_binary().is_some(),
+        ollama_running: is_ollama_up().await,
+        models_dir: default_models_dir(),
+    }
+}
+
+#[tauri::command]
+async fn start_ollama() -> Result<bool, String> {
+    if is_ollama_up().await {
+        return Ok(true);
+    }
+    let bin = find_ollama_binary().ok_or("Ollama não encontrado neste computador.")?;
+    let mut cmd = Command::new(bin);
+    cmd.arg("serve");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd.spawn().map_err(|e| format!("Falha ao iniciar Ollama: {e}"))?;
+
+    for _ in 0..20 {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        if is_ollama_up().await {
+            return Ok(true);
+        }
+    }
+    Err("O motor Ollama demorou para responder na porta 11434.".to_string())
+}
+
+#[tauri::command]
+async fn list_installed_models() -> Result<serde_json::Value, String> {
+    let resp = reqwest::get(format!("{OLLAMA_URL}/api/tags"))
+        .await
+        .map_err(|e| e.to_string())?;
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_running_models() -> Result<serde_json::Value, String> {
+    let resp = reqwest::get(format!("{OLLAMA_URL}/api/ps"))
+        .await
+        .map_err(|e| e.to_string())?;
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn unload_model(model: String) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    client
+        .post(format!("{OLLAMA_URL}/api/generate"))
+        .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_model(model: String) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .delete(format!("{OLLAMA_URL}/api/delete"))
+        .json(&serde_json::json!({ "name": model }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Erro ao remover modelo (HTTP {})", resp.status()));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn pull_model(app: AppHandle, model: String) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{OLLAMA_URL}/api/pull"))
+        .json(&serde_json::json!({ "name": model, "stream": true }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Erro ao baixar (HTTP {})", resp.status()));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut buf = String::new();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| e.to_string())?;
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(pos) = buf.find('\n') {
+            let line = buf[..pos].trim().to_string();
+            buf = buf[pos + 1..].to_string();
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
+                    let _ = app.emit("pull-progress", PullProgress {
+                        model: model.clone(),
+                        status: "erro".into(),
+                        completed: 0,
+                        total: 0,
+                        percent: 0.0,
+                        done: true,
+                        error: Some(err.to_string()),
+                    });
+                    return Err(err.to_string());
+                }
+                let status = v.get("status").and_then(|s| s.as_str()).unwrap_or("").to_string();
+                let completed = v.get("completed").and_then(|n| n.as_u64()).unwrap_or(0);
+                let total = v.get("total").and_then(|n| n.as_u64()).unwrap_or(0);
+                let percent = if total > 0 { (completed as f64 / total as f64) * 100.0 } else { 0.0 };
+                let _ = app.emit("pull-progress", PullProgress {
+                    model: model.clone(),
+                    status: status.clone(),
+                    completed,
+                    total,
+                    percent,
+                    done: status == "success",
+                    error: None,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn chat_stream(app: AppHandle, req: ChatRequest) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let msgs: Vec<serde_json::Value> = req
+        .messages
+        .iter()
+        .map(|m| {
+            if m.images.is_empty() {
+                serde_json::json!({ "role": m.role, "content": m.content })
+            } else {
+                serde_json::json!({ "role": m.role, "content": m.content, "images": m.images })
+            }
+        })
+        .collect();
+
+    let resp = client
+        .post(format!("{OLLAMA_URL}/api/chat"))
+        .json(&serde_json::json!({
+            "model": req.model,
+            "messages": msgs,
+            "stream": true
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        let msg = format!("Erro do motor local (HTTP {})", resp.status());
+        let _ = app.emit("chat-event", ChatEvent {
+            conv_id: req.conv_id,
+            delta: String::new(),
+            done: true,
+            error: Some(msg.clone()),
+        });
+        return Err(msg);
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut buf = String::new();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| e.to_string())?;
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(pos) = buf.find('\n') {
+            let line = buf[..pos].trim().to_string();
+            buf = buf[pos + 1..].to_string();
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                let delta = v
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let done = v.get("done").and_then(|d| d.as_bool()).unwrap_or(false);
+                let _ = app.emit("chat-event", ChatEvent {
+                    conv_id: req.conv_id.clone(),
+                    delta,
+                    done,
+                    error: None,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn load_conversations(app: AppHandle) -> Result<String, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let file = dir.join("conversations.json");
+    if !file.is_file() {
+        return Ok("[]".to_string());
+    }
+    std::fs::read_to_string(file).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_conversations(app: AppHandle, data: String) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("conversations.json"), data).map_err(|e| e.to_string())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            get_system_info,
+            start_ollama,
+            list_installed_models,
+            list_running_models,
+            unload_model,
+            delete_model,
+            pull_model,
+            chat_stream,
+            load_conversations,
+            save_conversations
+        ])
+        .run(tauri::generate_context!())
+        .expect("erro ao iniciar o Guanaco");
+}

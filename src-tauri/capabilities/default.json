@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissões padrão do Guanaco",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
