@@ -1,5 +1,7 @@
 :root {
+  color-scheme: light;
   --chat-font-size: 18px;
+  --select-bg: #ffffff;
 
   /* Tema Claro (padrão, limpo e luminoso) */
   --bg: #eef2f6;
@@ -28,6 +30,8 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
+  --select-bg: #18202c;
   --bg: #0d1218;
   --bg-grad: radial-gradient(circle at 20% 10%, rgba(0, 212, 230, 0.12), transparent 45%),
              radial-gradient(circle at 85% 85%, rgba(234, 134, 70, 0.07), transparent 42%),
@@ -313,12 +317,17 @@ main {
 }
 
 select {
-  background: var(--card);
+  background-color: var(--select-bg);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 6px 10px;
   font-size: 12.5px;
+}
+
+select option {
+  background-color: var(--select-bg);
+  color: var(--text);
 }
 
 .chat-log {
