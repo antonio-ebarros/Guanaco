@@ -10,9 +10,9 @@
   <aside id="side">
     <div class="brand">
       <img src="guanaco-logo.png" alt="Guanaco" class="brand-logo">
-      <div>
-        <div class="brand-title">Guanaco</div>
-        <div class="brand-sub">100% local e privado</div>
+      <div class="brand-meta">
+        <div class="brand-sub"><span class="lock-dot"></span> 100% local e privado</div>
+        <button id="btn-theme" class="theme-pill" type="button" title="Alternar tema claro e escuro">🌙 Escuro</button>
       </div>
     </div>
 
@@ -42,6 +42,11 @@
       <header class="view-head">
         <h1 id="chat-title">Nova conversa</h1>
         <div class="head-right">
+          <div class="font-ctrl" title="Tamanho da letra das respostas">
+            <button id="btn-font-dec" type="button" aria-label="Diminuir letra">A-</button>
+            <span id="font-size-label">18px</span>
+            <button id="btn-font-inc" type="button" aria-label="Aumentar letra">A+</button>
+          </div>
           <select id="model-select" aria-label="Modelo ativo"></select>
         </div>
       </header>
