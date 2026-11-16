@@ -144,15 +144,26 @@ function renderChat() {
   }
 
   for (const m of conv.messages) {
-    appendBubble(m.role, m.content);
+    appendBubble(m.role, m.content, m.previews || m.images || []);
   }
   log.scrollTop = log.scrollHeight;
 }
 
-function appendBubble(role, content) {
+function appendBubble(role, content, media = []) {
   const el = document.createElement('div');
   el.className = `msg ${role}`;
-  el.innerHTML = `<div class="msg-role">${role === 'user' ? 'Você' : 'Guanaco'}</div><div class="msg-body"></div>`;
+  el.innerHTML = `<div class="msg-role">${role === 'user' ? 'Você' : 'Guanaco'}</div><div class="msg-thumbs" hidden></div><div class="msg-body"></div>`;
+  const thumbs = el.querySelector('.msg-thumbs');
+  if (Array.isArray(media) && media.length) {
+    thumbs.hidden = false;
+    for (const item of media) {
+      const img = document.createElement('img');
+      img.className = 'msg-thumb';
+      img.alt = 'Imagem anexada';
+      img.src = item.startsWith('data:') ? item : `data:image/png;base64,${item}`;
+      thumbs.append(img);
+    }
+  }
   const body = el.querySelector('.msg-body');
   if (typeof renderMarkdown === 'function') {
     body.innerHTML = renderMarkdown(content || '');
@@ -638,12 +649,13 @@ $('#btn-attach').onclick = () => $('#file-input').click();
 $('#file-input').onchange = async ev => {
   for (const f of ev.target.files) {
     if (f.type.startsWith('image/')) {
-      const b64 = await new Promise(res => {
+      const dataUrl = await new Promise(res => {
         const r = new FileReader();
-        r.onload = () => res(r.result.split(',')[1]);
+        r.onload = () => res(r.result);
         r.readAsDataURL(f);
       });
-      attachments.push({ name: f.name, kind: 'image', data: b64 });
+      const b64 = String(dataUrl).split(',')[1] || '';
+      attachments.push({ name: f.name, kind: 'image', data: b64, previewUrl: String(dataUrl) });
     } else {
       const txt = await f.text();
       attachments.push({ name: f.name, kind: 'text', data: txt });
@@ -659,11 +671,23 @@ function renderChips() {
   attachments.forEach((a, i) => {
     const c = document.createElement('span');
     c.className = 'chip';
-    c.innerHTML = `<span>${a.name}</span><button type="button">✕</button>`;
-    c.querySelector('button').onclick = () => {
+    if (a.kind === 'image' && a.previewUrl) {
+      const img = document.createElement('img');
+      img.className = 'chip-thumb';
+      img.src = a.previewUrl;
+      img.alt = a.name;
+      c.append(img);
+    }
+    const label = document.createElement('span');
+    label.textContent = a.name;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '✕';
+    del.onclick = () => {
       attachments.splice(i, 1);
       renderChips();
     };
+    c.append(label, del);
     box.append(c);
   });
 }
@@ -671,6 +695,30 @@ function renderChips() {
 $('#btn-new-chat').onclick = newConversation;
 
 let activeStreamBubble = null;
+
+function setGenerating(active) {
+  busy = active;
+  $('#btn-send').disabled = active;
+  $('#btn-send').hidden = active;
+  $('#btn-stop').hidden = !active;
+}
+
+$('#btn-stop').onclick = async () => {
+  if (!busy) return;
+  try {
+    await invoke('cancel_chat');
+    const conv = activeConv();
+    const last = conv?.messages?.[conv.messages.length - 1];
+    if (last && last.role === 'assistant' && !last.content) {
+      last.content = '*Geração cancelada.*';
+      if (activeStreamBubble) {
+        activeStreamBubble.querySelector('.msg-body').innerHTML = renderMarkdown(last.content);
+      }
+    }
+  } finally {
+    setGenerating(false);
+  }
+};
 
 $('#composer').onsubmit = async e => {
   e.preventDefault();
@@ -683,7 +731,9 @@ $('#composer').onsubmit = async e => {
   let text = editorToMarkdown(input);
   if (!text && !attachments.length) return;
 
-  const imgs = attachments.filter(a => a.kind === 'image').map(a => a.data);
+  const imgAtts = attachments.filter(a => a.kind === 'image');
+  const imgs = imgAtts.map(a => a.data);
+  const previews = imgAtts.map(a => a.previewUrl || `data:image/png;base64,${a.data}`);
   const textFiles = attachments.filter(a => a.kind === 'text');
   if (textFiles.length) {
     const extra = textFiles.map(f => `\n\n--- Arquivo: ${f.name} ---\n\`\`\`\n${f.data}\n\`\`\``).join('');
@@ -698,16 +748,15 @@ $('#composer').onsubmit = async e => {
     conv.title = text.replace(/[#>*`-]/g, '').trim().slice(0, 38) || 'Conversa';
     renderConvList();
   }
-  conv.messages.push({ role: 'user', content: text, images: imgs });
+  conv.messages.push({ role: 'user', content: text, images: imgs, previews });
   if (conv.messages.length === 1) $('#chat-log').innerHTML = '';
-  appendBubble('user', text);
+  appendBubble('user', text, previews);
 
   conv.messages.push({ role: 'assistant', content: '' });
   activeStreamBubble = appendBubble('assistant', '…');
   $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
 
-  busy = true;
-  $('#btn-send').disabled = true;
+  setGenerating(true);
   try {
     await invoke('chat_stream', {
       req: {
@@ -720,8 +769,7 @@ $('#composer').onsubmit = async e => {
     conv.messages[conv.messages.length - 1].content = `Erro: ${err}`;
     activeStreamBubble.querySelector('.msg-body').textContent = `Erro: ${err}`;
   } finally {
-    busy = false;
-    $('#btn-send').disabled = false;
+    setGenerating(false);
     await persistConversations();
   }
 };

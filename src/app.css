@@ -178,6 +178,18 @@ body {
 .btn-primary:hover { filter: brightness(1.07); }
 .btn-primary.full { width: 100%; }
 
+.btn-danger {
+  background: var(--danger);
+  color: #ffffff;
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-danger:hover { filter: brightness(1.08); }
+
 .btn-ghost {
   background: var(--card);
   color: var(--text);
@@ -420,13 +432,35 @@ select option {
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--glass-border);
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 4px 10px;
   font-size: 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
+.chip-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  object-fit: cover;
+  display: block;
+}
 .chip button { background: transparent; border: 0; color: var(--dim); cursor: pointer; }
+
+.msg-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.msg-thumb {
+  max-width: 150px;
+  max-height: 150px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  display: block;
+}
 
 .input-box {
   background: var(--glass-bg);

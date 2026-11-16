@@ -1,11 +1,28 @@
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, Command};
+use std::sync::Mutex;
 use sysinfo::System;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 const OLLAMA_URL: &str = "http://127.0.0.1:11434";
+
+struct AppState {
+    chat_cancel: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
+    ollama_child: Mutex<Option<Child>>,
+    active_model: Mutex<Option<String>>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            chat_cancel: Mutex::new(None),
+            ollama_child: Mutex::new(None),
+            active_model: Mutex::new(None),
+        }
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -187,7 +204,7 @@ async fn get_system_info() -> SystemInfo {
 }
 
 #[tauri::command]
-async fn start_ollama() -> Result<bool, String> {
+async fn start_ollama(state: State<'_, AppState>) -> Result<bool, String> {
     if is_ollama_up().await {
         return Ok(true);
     }
@@ -199,7 +216,10 @@ async fn start_ollama() -> Result<bool, String> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    cmd.spawn().map_err(|e| format!("Falha ao iniciar Ollama: {e}"))?;
+    let child = cmd.spawn().map_err(|e| format!("Falha ao iniciar Ollama: {e}"))?;
+    if let Ok(mut guard) = state.ollama_child.lock() {
+        *guard = Some(child);
+    }
 
     for _ in 0..20 {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -315,7 +335,31 @@ async fn pull_model(app: AppHandle, model: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn chat_stream(app: AppHandle, req: ChatRequest) -> Result<(), String> {
+async fn cancel_chat(state: State<'_, AppState>) -> Result<(), String> {
+    if let Ok(mut guard) = state.chat_cancel.lock() {
+        if let Some(tx) = guard.take() {
+            let _ = tx.send(true);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn chat_stream(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: ChatRequest,
+) -> Result<(), String> {
+    let (tx, mut rx) = tokio::sync::watch::channel(false);
+    if let Ok(mut guard) = state.chat_cancel.lock() {
+        if let Some(prev) = guard.replace(tx) {
+            let _ = prev.send(true);
+        }
+    }
+    if let Ok(mut m) = state.active_model.lock() {
+        *m = Some(req.model.clone());
+    }
+
     let client = reqwest::Client::new();
     let msgs: Vec<serde_json::Value> = req
         .messages
@@ -329,16 +373,27 @@ async fn chat_stream(app: AppHandle, req: ChatRequest) -> Result<(), String> {
         })
         .collect();
 
-    let resp = client
+    let send_fut = client
         .post(format!("{OLLAMA_URL}/api/chat"))
         .json(&serde_json::json!({
             "model": req.model,
             "messages": msgs,
             "stream": true
         }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+        .send();
+
+    let resp = tokio::select! {
+        _ = rx.changed() => {
+            let _ = app.emit("chat-event", ChatEvent {
+                conv_id: req.conv_id,
+                delta: String::new(),
+                done: true,
+                error: None,
+            });
+            return Ok(());
+        }
+        r = send_fut => r.map_err(|e| e.to_string())?,
+    };
 
     if !resp.status().is_success() {
         let msg = format!("Erro do motor local (HTTP {})", resp.status());
@@ -353,7 +408,23 @@ async fn chat_stream(app: AppHandle, req: ChatRequest) -> Result<(), String> {
 
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
-    while let Some(chunk) = stream.next().await {
+    loop {
+        let next_chunk = tokio::select! {
+            _ = rx.changed() => {
+                drop(stream);
+                let _ = app.emit("chat-event", ChatEvent {
+                    conv_id: req.conv_id.clone(),
+                    delta: String::new(),
+                    done: true,
+                    error: None,
+                });
+                break;
+            }
+            c = stream.next() => c,
+        };
+        let Some(chunk) = next_chunk else {
+            break;
+        };
         let bytes = chunk.map_err(|e| e.to_string())?;
         buf.push_str(&String::from_utf8_lossy(&bytes));
         while let Some(pos) = buf.find('\n') {
@@ -378,6 +449,9 @@ async fn chat_stream(app: AppHandle, req: ChatRequest) -> Result<(), String> {
                 });
             }
         }
+    }
+    if let Ok(mut guard) = state.chat_cancel.lock() {
+        *guard = None;
     }
     Ok(())
 }
@@ -419,9 +493,55 @@ fn save_conversations(app: AppHandle, data: String) -> Result<(), String> {
     std::fs::rename(&tmp, &file).map_err(|e| e.to_string())
 }
 
+fn cleanup_on_exit(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let had_active_chat = if let Ok(mut guard) = state.chat_cancel.lock() {
+        if let Some(tx) = guard.take() {
+            let _ = tx.send(true);
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if let Ok(mut child_guard) = state.ollama_child.lock() {
+        if let Some(mut child) = child_guard.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    if had_active_chat {
+        if let Ok(m_guard) = state.active_model.lock() {
+            if let Some(model) = m_guard.as_ref().cloned() {
+                tauri::async_runtime::block_on(async move {
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_millis(700))
+                        .build();
+                    if let Ok(c) = client {
+                        let _ = c
+                            .post(format!("{OLLAMA_URL}/api/generate"))
+                            .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
+                            .send()
+                            .await;
+                    }
+                });
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AppState::default())
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                cleanup_on_exit(window.app_handle());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_system_info,
             start_ollama,
@@ -430,6 +550,7 @@ pub fn run() {
             unload_model,
             delete_model,
             pull_model,
+            cancel_chat,
             chat_stream,
             load_conversations,
             save_conversations
