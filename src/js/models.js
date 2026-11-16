@@ -1,4 +1,5 @@
 import { $, PRESETS, fmtGb, invoke, state, switchView } from './state.js';
+import { t } from './i18n.js';
 
 let onRenderChat = () => {};
 
@@ -6,28 +7,36 @@ export function setChatRenderer(fn) {
   onRenderChat = fn;
 }
 
-export async function bootstrap() {
-  state.sysInfo = await invoke('get_system_info');
+export function renderEngineStatus() {
+  const s = state.sysInfo;
+  if (!s) return;
   const dot = $('#engine-dot');
   const lbl = $('#engine-label');
   const mem = $('#engine-mem');
   const btnStart = $('#btn-start-engine');
 
-  mem.textContent = `${state.sysInfo.totalRamGb} GB RAM • ${state.sysInfo.cpuCores} núcleos`;
-  if (state.sysInfo.ollamaRunning) {
+  mem.textContent = t('coresLabel', { ram: s.totalRamGb, cores: s.cpuCores });
+  if (s.ollamaRunning) {
     dot.className = 'dot ok';
-    lbl.textContent = 'Motor local ativo';
+    lbl.textContent = t('engineActive');
     btnStart.hidden = true;
-    await refreshModels();
-  } else if (state.sysInfo.ollamaInstalled) {
+  } else if (s.ollamaInstalled) {
     dot.className = 'dot err';
-    lbl.textContent = 'Motor desligado';
+    lbl.textContent = t('engineOff');
     btnStart.hidden = false;
-    state.installed = [];
   } else {
     dot.className = 'dot err';
-    lbl.textContent = 'Motor não preparado';
+    lbl.textContent = t('engineNotReady');
     btnStart.hidden = true;
+  }
+}
+
+export async function bootstrap() {
+  state.sysInfo = await invoke('get_system_info');
+  renderEngineStatus();
+  if (state.sysInfo.ollamaRunning) {
+    await refreshModels();
+  } else {
     state.installed = [];
   }
   renderModelsView();
@@ -35,7 +44,7 @@ export async function bootstrap() {
 }
 
 export async function startEngine() {
-  $('#engine-label').textContent = 'Ligando motor…';
+  $('#engine-label').textContent = t('startingEngine');
   try {
     await invoke('start_ollama');
     await bootstrap();
@@ -55,7 +64,7 @@ export async function installEngine() {
     await bootstrap();
   } catch (e) {
     const st = $('#eng-install-status');
-    if (st) st.textContent = `Erro: ${e}`;
+    if (st) st.textContent = `${t('errPrefix')}: ${e}`;
     if (btn) btn.disabled = false;
   }
 }
@@ -88,7 +97,7 @@ export async function refreshModels() {
 
 export function evaluatePresetFit(p) {
   const s = state.sysInfo;
-  if (!s) return { cls: 'badge-ok', label: 'Verificando PC…' };
+  if (!s) return { cls: 'badge-ok', label: t('fitChecking') };
   const osReserve = s.osReservedGb ?? 1.5;
   const usableRamNow = Math.max(0, (s.freeRamGb || 0) - osReserve);
   const hasGpu = Boolean(s.gpuName);
@@ -101,21 +110,21 @@ export function evaluatePresetFit(p) {
   const need = p.neededMemGb;
 
   if (usableVramNow >= need) {
-    return { cls: 'badge-ok', label: 'Roda rápido na GPU agora' };
+    return { cls: 'badge-ok', label: t('fitGpuFast') };
   }
   if (budgetNow >= need) {
     if (!hasGpu && (s.cpuCores || 0) <= 2 && need > 2.5) {
-      return { cls: 'badge-warn', label: 'Cabe na RAM, mas CPU lenta' };
+      return { cls: 'badge-warn', label: t('fitCpuSlow') };
     }
-    return { cls: 'badge-ok', label: hasGpu ? 'Roda bem agora (GPU + RAM)' : 'Roda bem na RAM agora' };
+    return { cls: 'badge-ok', label: hasGpu ? t('fitGoodGpuRam') : t('fitGoodRam') };
   }
   if (state.running.length && budgetAfterUnload >= need) {
-    return { cls: 'badge-warn', label: 'Libere modelos ativos para rodar' };
+    return { cls: 'badge-warn', label: t('fitUnloadFirst') };
   }
   if (maxHardwareBudget >= need) {
-    return { cls: 'badge-warn', label: `Pouca memória livre agora (~${need} GB)` };
+    return { cls: 'badge-warn', label: t('fitLowFreeMem', { need }) };
   }
-  return { cls: 'badge-err', label: `Pesado demais (~${need} GB em uso)` };
+  return { cls: 'badge-err', label: t('fitTooHeavy', { need }) };
 }
 
 export function renderModelsView() {
@@ -124,18 +133,18 @@ export function renderModelsView() {
     const osReserve = s.osReservedGb ?? 1.5;
     const runningMemGb = state.running.reduce((acc, m) => acc + (m.size || 0) / 1073741824, 0);
     const gpuText = s.gpuName
-      ? `GPU: <b>${s.gpuName}</b> (${s.gpuVramFreeGb} GB livres de ${s.gpuVramTotalGb} GB VRAM)`
-      : `Sem GPU NVIDIA dedicada (rodará na CPU)`;
+      ? t('gpuAvailable', { name: s.gpuName, free: s.gpuVramFreeGb, total: s.gpuVramTotalGb })
+      : t('noDedicatedGpu');
     const runningHtml = state.running.length
       ? `<div class="row-between" style="margin-top:4px;">
-           <span class="muted">Modelos carregados agora: <b>${state.running.length}</b> ocupando <b>${runningMemGb.toFixed(2)} GB</b></span>
-           <button id="btn-unload-all-models" class="btn-ghost small" type="button">Liberar memória</button>
+           <span class="muted">${t('loadedModelsNow', { count: state.running.length, gb: runningMemGb.toFixed(2) })}</span>
+           <button id="btn-unload-all-models" class="btn-ghost small" type="button">${t('freeMemBtn')}</button>
          </div>`
-      : `<div class="muted">Nenhum modelo carregado na memória no momento.</div>`;
+      : `<div class="muted">${t('noLoadedModels')}</div>`;
 
     $('#hw-banner').innerHTML = `
-      <div><strong>Memória livre agora:</strong> <b>${s.freeRamGb} GB</b> livres de ${s.totalRamGb} GB totais (reservando ~${osReserve} GB para o sistema)</div>
-      <div class="muted">CPU: ${s.cpuName} (${s.cpuCores} núcleos) • ${gpuText}</div>
+      <div>${t('memFreeBanner', { free: s.freeRamGb, total: s.totalRamGb, reserve: osReserve })}</div>
+      <div class="muted">${t('cpuGpuLine', { cpu: s.cpuName, cores: s.cpuCores, gpu: gpuText })}</div>
       ${runningHtml}
     `;
     $('#btn-unload-all-models')?.addEventListener('click', async () => {
@@ -155,14 +164,14 @@ export function renderModelsView() {
     card.className = 'info-card';
     card.innerHTML = `
       <div class="row-between">
-        <strong>${p.name}</strong>
-        <span class="muted">${p.sizeGb} GB disco • ~${p.neededMemGb} GB uso</span>
+        <strong>${t(p.nameKey)}</strong>
+        <span class="muted">${t('diskAndUsage', { disk: p.sizeGb, need: p.neededMemGb })}</span>
       </div>
       <span class="${fit.cls}">${fit.label}</span>
-      <p class="muted">${p.desc}</p>
+      <p class="muted">${t(p.descKey)}</p>
       <div class="row-between">
         <code class="muted">${p.id}</code>
-        <button class="${has ? 'btn-ghost small' : 'btn-primary'}" type="button">${has ? 'Usar' : 'Baixar'}</button>
+        <button class="${has ? 'btn-ghost small' : 'btn-primary'}" type="button">${has ? t('use') : t('download')}</button>
       </div>
     `;
     card.querySelector('button').onclick = () => {
@@ -179,7 +188,7 @@ export function renderModelsView() {
   const list = $('#installed-list');
   list.innerHTML = '';
   if (!state.installed.length) {
-    list.innerHTML = `<div class="list-row"><span class="muted">Nenhum modelo baixado ainda.</span></div>`;
+    list.innerHTML = `<div class="list-row"><span class="muted">${t('noInstalledModels')}</span></div>`;
   } else {
     for (const m of state.installed) {
       const row = document.createElement('div');
@@ -187,11 +196,11 @@ export function renderModelsView() {
       row.innerHTML = `
         <div>
           <strong>${m.name}</strong>
-          <div class="muted">${fmtGb(m.size || 0)} em disco</div>
+          <div class="muted">${t('onDisk', { size: fmtGb(m.size || 0) })}</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn-ghost small use-btn" type="button">Usar</button>
-          <button class="btn-ghost small danger del-btn" type="button">Apagar</button>
+          <button class="btn-ghost small use-btn" type="button">${t('use')}</button>
+          <button class="btn-ghost small danger del-btn" type="button">${t('delete')}</button>
         </div>
       `;
       row.querySelector('.use-btn').onclick = () => {
@@ -199,7 +208,7 @@ export function renderModelsView() {
         switchView('chat');
       };
       row.querySelector('.del-btn').onclick = async () => {
-        if (!confirm(`Remover ${m.name} e liberar ${fmtGb(m.size || 0)}?`)) return;
+        if (!confirm(t('confirmDelete', { name: m.name, size: fmtGb(m.size || 0) }))) return;
         await invoke('delete_model', { model: m.name });
         await refreshModels();
         if (!state.busy) onRenderChat();
@@ -211,11 +220,11 @@ export function renderModelsView() {
 
 export async function pullModel(name) {
   if (!state.sysInfo?.ollamaRunning) {
-    alert('Ligue o Motor de IA antes de baixar um modelo.');
+    alert(t('startBeforePull'));
     return;
   }
   $('#pull-card').hidden = false;
-  $('#pull-title').textContent = `Baixando ${name}…`;
+  $('#pull-title').textContent = `${t('downloadingModel')} (${name})`;
   $('#pull-pct').textContent = '0%';
   $('#pull-fill').style.width = '0%';
   try {
@@ -225,28 +234,22 @@ export async function pullModel(name) {
     $('#model-select').value = name;
     if (!state.busy) onRenderChat();
   } catch (e) {
-    $('#pull-status').textContent = `Erro: ${e}`;
+    $('#pull-status').textContent = `${t('errPrefix')}: ${e}`;
   }
 }
 
-export async function refreshControl() {
-  await bootstrap();
+export function renderControlView() {
   const s = state.sysInfo;
-  $('#ctrl-hw').textContent = `${s.freeRamGb} GB livres de ${s.totalRamGb} GB RAM`;
+  if (!s) return;
+  $('#ctrl-hw').textContent = t('ctrlHwSummary', { free: s.freeRamGb, total: s.totalRamGb });
   $('#ctrl-gpu').textContent = s.gpuName
-    ? `CPU: ${s.cpuName} (${s.cpuCores} núcleos) • GPU: ${s.gpuName} (${s.gpuVramFreeGb}/${s.gpuVramTotalGb} GB VRAM livres)`
-    : `CPU: ${s.cpuName} (${s.cpuCores} núcleos) • Sem GPU dedicada`;
+    ? t('ctrlGpuLine', { cpu: s.cpuName, cores: s.cpuCores, name: s.gpuName, free: s.gpuVramFreeGb, total: s.gpuVramTotalGb })
+    : t('ctrlCpuOnlyLine', { cpu: s.cpuName, cores: s.cpuCores });
 
   const runBox = $('#running-list');
   runBox.innerHTML = '';
-  try {
-    const ps = await invoke('list_running_models');
-    state.running = ps.models || [];
-  } catch {
-    state.running = [];
-  }
   if (!state.running.length) {
-    runBox.innerHTML = `<div class="list-row"><span class="muted">Nenhum modelo carregado na memória no momento.</span></div>`;
+    runBox.innerHTML = `<div class="list-row"><span class="muted">${t('noLoadedModels')}</span></div>`;
   } else {
     for (const r of state.running) {
       const row = document.createElement('div');
@@ -254,9 +257,9 @@ export async function refreshControl() {
       row.innerHTML = `
         <div>
           <strong>${r.name}</strong>
-          <div class="muted">Ocupando ${fmtGb(r.size || 0)} na memória</div>
+          <div class="muted">${t('usingInMem', { size: fmtGb(r.size || 0) })}</div>
         </div>
-        <button class="btn-ghost small" type="button">Liberar Memória</button>
+        <button class="btn-ghost small" type="button">${t('freeMemTitleBtn')}</button>
       `;
       row.querySelector('button').onclick = async () => {
         await invoke('unload_model', { model: r.name });
@@ -268,9 +271,20 @@ export async function refreshControl() {
 
   const totalDisk = state.installed.reduce((acc, m) => acc + (m.size || 0), 0);
   $('#storage-card').innerHTML = `
-    <div><strong>Pasta dos modelos:</strong> <code>${s.modelsDir}</code></div>
-    <div class="muted">${state.installed.length} modelo(s) salvo(s) ocupando <b>${fmtGb(totalDisk)}</b> no disco.</div>
+    <div><strong>${t('modelsFolder')}</strong> <code>${s.modelsDir}</code></div>
+    <div class="muted">${t('diskSummary', { count: state.installed.length, size: fmtGb(totalDisk) })}</div>
   `;
+}
+
+export async function refreshControl() {
+  await bootstrap();
+  try {
+    const ps = await invoke('list_running_models');
+    state.running = ps.models || [];
+  } catch {
+    state.running = [];
+  }
+  renderControlView();
 }
 
 export function initModelsEvents() {

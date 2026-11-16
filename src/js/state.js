@@ -5,11 +5,11 @@ export const $ = s => document.querySelector(s);
 export const $$ = s => [...document.querySelectorAll(s)];
 
 export const PRESETS = [
-  { id: 'qwen2.5:1.5b', name: 'Rápido e Leve', sizeGb: 1.0, neededMemGb: 1.8, desc: 'Ideal para computadores básicos e respostas rápidas no dia a dia.' },
-  { id: 'llama3.2:3b', name: 'Equilibrado', sizeGb: 2.0, neededMemGb: 2.8, desc: 'Ótimo equilíbrio entre velocidade, português claro e resumos.' },
-  { id: 'moondream', name: 'Visão Leve (Imagens)', sizeGb: 1.7, neededMemGb: 2.3, desc: 'Analisa fotos e prints sem pesar em computadores mais simples.' },
-  { id: 'gemma3:4b', name: 'Visão Avançada', sizeGb: 3.3, neededMemGb: 4.2, desc: 'Mais detalhado para imagens e textos, ideal para GPUs com 6 GB+ ou bastante RAM.' },
-  { id: 'qwen2.5:7b', name: 'Mais Capaz', sizeGb: 4.7, neededMemGb: 5.8, desc: 'Melhor raciocínio e textos longos para PCs com mais memória.' },
+  { id: 'qwen2.5:1.5b', nameKey: 'preset_fast_name', descKey: 'preset_fast_desc', sizeGb: 1.0, neededMemGb: 1.8 },
+  { id: 'llama3.2:3b', nameKey: 'preset_bal_name', descKey: 'preset_bal_desc', sizeGb: 2.0, neededMemGb: 2.8 },
+  { id: 'moondream', nameKey: 'preset_vis_lite_name', descKey: 'preset_vis_lite_desc', sizeGb: 1.7, neededMemGb: 2.3 },
+  { id: 'gemma3:4b', nameKey: 'preset_vis_pro_name', descKey: 'preset_vis_pro_desc', sizeGb: 3.3, neededMemGb: 4.2 },
+  { id: 'qwen2.5:7b', nameKey: 'preset_cap_name', descKey: 'preset_cap_desc', sizeGb: 4.7, neededMemGb: 5.8 },
 ];
 
 export const state = {

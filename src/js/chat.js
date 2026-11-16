@@ -1,6 +1,7 @@
 import { $, invoke, state, switchView } from './state.js';
 import { bootstrap, installEngine, startEngine } from './models.js';
 import { copyResponseText, stopSpeaking, toggleSpeak } from './speech.js';
+import { t } from './i18n.js';
 
 let thinkingTimer = null;
 const input = $('#input');
@@ -32,7 +33,7 @@ export function newConversation() {
   stopSpeaking();
   const c = {
     id: String(Date.now()),
-    title: 'Nova conversa',
+    title: t('newConvTitle'),
     model: $('#model-select').value || state.installed[0]?.name || '',
     messages: [],
   };
@@ -103,14 +104,14 @@ export function appendBubble(role, content, media = [], fileNames = [], thinking
 
   const actionsHtml = role === 'assistant'
     ? `<div class="msg-actions">
-         <button class="msg-action speak-btn" type="button" title="Ler resposta em voz alta">🔊 Ouvir</button>
-         <button class="msg-action copy-btn" type="button" title="Copiar resposta">📋 Copiar</button>
+         <button class="msg-action speak-btn" type="button" title="${t('speakTitle')}">${t('speak')}</button>
+         <button class="msg-action copy-btn" type="button" title="${t('copyTitle')}">${t('copy')}</button>
        </div>`
     : '';
 
   el.innerHTML = `
     <div class="msg-head">
-      <div class="msg-role">${role === 'user' ? 'Você' : 'Guanaco'}</div>
+      <div class="msg-role">${role === 'user' ? t('you') : t('guanaco')}</div>
       ${actionsHtml}
     </div>
     <div class="msg-thumbs" hidden></div>
@@ -160,7 +161,7 @@ export function appendBubble(role, content, media = [], fileNames = [], thinking
 
 export function renderChat() {
   const conv = activeConv();
-  $('#chat-title').textContent = conv?.title || 'Nova conversa';
+  $('#chat-title').textContent = conv?.title || t('newConvTitle');
   const log = $('#chat-log');
   log.innerHTML = '';
 
@@ -168,21 +169,21 @@ export function renderChat() {
     const box = document.createElement('div');
     box.className = 'welcome-box';
     box.innerHTML = state.sysInfo?.ollamaInstalled
-      ? `<h2>Motor de IA desligado</h2>
-         <p>O motor local está instalado no seu computador, mas está parado no momento.</p>
-         <button id="wb-start" class="btn-primary" type="button">Ligar Motor de IA agora</button>`
-      : `<h2>Bem-vindo ao Guanaco</h2>
-         <p>Para rodar modelos de IA 100% no seu computador (sem enviar nada para a nuvem), precisamos preparar o motor local na primeira abertura.</p>
+      ? `<h2>${t('engineOffTitle')}</h2>
+         <p>${t('engineOffDesc')}</p>
+         <button id="wb-start" class="btn-primary" type="button">${t('startEngineNow')}</button>`
+      : `<h2>${t('welcomeTitle')}</h2>
+         <p>${t('welcomeDesc')}</p>
          <div id="eng-install-box" hidden style="display:flex;flex-direction:column;gap:8px;">
            <div class="row-between">
-             <strong id="eng-install-status">Preparando…</strong>
+             <strong id="eng-install-status">${t('preparing')}</strong>
              <span id="eng-install-pct">0%</span>
            </div>
            <div class="progress-track"><div id="eng-install-fill" class="progress-fill"></div></div>
          </div>
          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-           <button id="wb-install" class="btn-primary" type="button">Preparar Motor Automático (1 clique)</button>
-           <button id="wb-recheck" class="btn-ghost" type="button">Verificar novamente</button>
+           <button id="wb-install" class="btn-primary" type="button">${t('prepareAutoBtn')}</button>
+           <button id="wb-recheck" class="btn-ghost" type="button">${t('recheckBtn')}</button>
          </div>`;
     log.append(box);
     box.querySelector('#wb-start')?.addEventListener('click', startEngine);
@@ -195,9 +196,9 @@ export function renderChat() {
     const box = document.createElement('div');
     box.className = 'welcome-box';
     box.innerHTML = `
-      <h2>Escolha seu primeiro modelo de IA</h2>
-      <p>Seu computador tem <b>${state.sysInfo.totalRamGb} GB de RAM</b>. Escolha uma opção abaixo para baixar e começar a conversar — sem terminal:</p>
-      <button id="wb-go-models" class="btn-primary" type="button">Escolher e baixar modelo</button>
+      <h2>${t('chooseFirstTitle')}</h2>
+      <p>${t('chooseFirstDesc', { ram: state.sysInfo.totalRamGb })}</p>
+      <button id="wb-go-models" class="btn-primary" type="button">${t('chooseFirstBtn')}</button>
     `;
     log.append(box);
     box.querySelector('#wb-go-models').onclick = () => switchView('models');
@@ -208,8 +209,8 @@ export function renderChat() {
     const box = document.createElement('div');
     box.className = 'welcome-box';
     box.innerHTML = `
-      <h2>Tudo pronto</h2>
-      <p>Você está usando <b>${$('#model-select').value || 'modelo local'}</b>. Tudo o que você digitar fica apenas neste computador.</p>
+      <h2>${t('allReadyTitle')}</h2>
+      <p>${t('allReadyDesc', { model: $('#model-select').value || 'modelo local' })}</p>
     `;
     log.append(box);
     return;
@@ -538,12 +539,12 @@ export function initChatEvents() {
       if (last && last.role === 'assistant') {
         if (!String(last.content || '').trim()) {
           last.cancelled = true;
-          last.content = 'Geração cancelada.';
+          last.content = t('cancelledMsg');
         }
         if (state.activeStreamBubble) {
           state.activeStreamBubble.dataset.rawText = last.content;
           const body = state.activeStreamBubble.querySelector('.msg-body');
-          if (last.cancelled) body.innerHTML = `<em class="muted">Geração cancelada.</em>`;
+          if (last.cancelled) body.innerHTML = `<em class="muted">${t('cancelledMsg')}</em>`;
           else body.innerHTML = window.renderMarkdown(last.content);
         }
         await persistConversations();
@@ -575,16 +576,16 @@ export function initChatEvents() {
       const extra = textFiles.map(f => `\n\n--- Arquivo: ${f.name} ---\n\`\`\`\n${f.data}\n\`\`\``).join('');
       fullText = (fullText + extra).trim();
     }
-    const displayContent = typedText || (fileNames.length ? 'Analise os arquivos anexados:' : '');
+    const displayContent = typedText || (fileNames.length ? t('analyzeFilesPrompt') : '');
 
     state.attachments = [];
     renderChips();
     input.innerHTML = '';
 
     const conv = activeConv();
-    if (conv.title === 'Nova conversa') {
-      const titleBase = typedText || fileNames[0] || 'Conversa';
-      conv.title = titleBase.replace(/[#>*`-]/g, '').trim().slice(0, 38) || 'Conversa';
+    if (!conv.messages.length) {
+      const titleBase = typedText || fileNames[0] || t('newConvTitle');
+      conv.title = titleBase.replace(/[#>*`-]/g, '').trim().slice(0, 38) || t('newConvTitle');
       renderConvList();
     }
     conv.messages.push({
@@ -598,7 +599,7 @@ export function initChatEvents() {
     if (conv.messages.length === 1) $('#chat-log').innerHTML = '';
     appendBubble('user', displayContent, previews, fileNames);
 
-    const thinkingLabel = imgs.length ? 'Analisando imagem' : (fileNames.length ? 'Lendo documento' : 'Pensando');
+    const thinkingLabel = imgs.length ? t('analyzingImg') : (fileNames.length ? t('readingDoc') : t('thinking'));
     conv.messages.push({ role: 'assistant', content: '' });
     state.activeStreamBubble = appendBubble('assistant', '', [], [], thinkingLabel);
     $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
@@ -635,7 +636,7 @@ export function initChatEvents() {
       const last = conv.messages[conv.messages.length - 1];
       if (last && last.role === 'assistant' && !String(last.content || '').trim()) {
         last.cancelled = state.streamCancelled;
-        last.content = state.streamCancelled ? 'Geração cancelada.' : 'Sem resposta do modelo.';
+        last.content = state.streamCancelled ? t('cancelledMsg') : t('noReplyMsg');
         if (state.activeStreamBubble) {
           state.activeStreamBubble.dataset.rawText = last.content;
           state.activeStreamBubble.querySelector('.msg-body').innerHTML = `<em class="muted">${last.content}</em>`;

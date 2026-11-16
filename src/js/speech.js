@@ -1,8 +1,10 @@
+import { getSpeechLang, t } from './i18n.js';
+
 let activeSpeakBtn = null;
 
 function cleanTextForSpeech(mdText) {
   return String(mdText || '')
-    .replace(/```[\s\S]*?```/g, ' bloco de código ')
+    .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/[#>*_~-]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -14,7 +16,7 @@ export function stopSpeaking() {
     window.speechSynthesis.cancel();
   }
   if (activeSpeakBtn) {
-    activeSpeakBtn.textContent = '🔊 Ouvir';
+    activeSpeakBtn.textContent = t('speak');
     activeSpeakBtn.classList.remove('active');
     activeSpeakBtn = null;
   }
@@ -22,8 +24,8 @@ export function stopSpeaking() {
 
 export function toggleSpeak(btn, text) {
   if (!('speechSynthesis' in window)) {
-    btn.textContent = 'Indisponível';
-    setTimeout(() => { btn.textContent = '🔊 Ouvir'; }, 1800);
+    btn.textContent = t('speakUnavailable');
+    setTimeout(() => { btn.textContent = t('speak'); }, 1800);
     return;
   }
 
@@ -35,11 +37,11 @@ export function toggleSpeak(btn, text) {
   if (!clean) return;
 
   const utter = new SpeechSynthesisUtterance(clean);
-  utter.lang = 'pt-BR';
+  utter.lang = getSpeechLang();
   utter.rate = 1.0;
 
   activeSpeakBtn = btn;
-  btn.textContent = '⏹ Parar';
+  btn.textContent = t('speakStop');
   btn.classList.add('active');
 
   utter.onend = () => {
@@ -57,15 +59,14 @@ export async function copyResponseText(btn, text) {
   if (!val) return;
   try {
     await navigator.clipboard.writeText(val);
-    const prev = btn.textContent;
-    btn.textContent = '✓ Copiado';
+    btn.textContent = t('copied');
     btn.classList.add('active');
     setTimeout(() => {
-      btn.textContent = prev;
+      btn.textContent = t('copy');
       btn.classList.remove('active');
     }, 1600);
   } catch {
-    btn.textContent = 'Erro';
-    setTimeout(() => { btn.textContent = '📋 Copiar'; }, 1500);
+    btn.textContent = t('copyError');
+    setTimeout(() => { btn.textContent = t('copy'); }, 1500);
   }
 }

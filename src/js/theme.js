@@ -1,11 +1,12 @@
 import { $ } from './state.js';
+import { applyI18n, t } from './i18n.js';
 
 export function applyTheme(theme) {
-  const t = theme === 'dark' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = t;
-  localStorage.setItem('guanaco-theme', t);
+  const th = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = th;
+  localStorage.setItem('guanaco-theme', th);
   const btn = $('#btn-theme');
-  if (btn) btn.textContent = t === 'dark' ? '☀️ Claro' : '🌙 Escuro';
+  if (btn) btn.textContent = th === 'dark' ? t('themeLight') : t('themeDark');
 }
 
 export function applyFontSize(px) {
@@ -16,7 +17,7 @@ export function applyFontSize(px) {
   if (lbl) lbl.textContent = `${size}px`;
 }
 
-export function initPreferences() {
+export function initPreferences(onLangChange) {
   $('#btn-theme')?.addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     applyTheme(next);
@@ -32,6 +33,14 @@ export function initPreferences() {
     applyFontSize(cur + 2);
   });
 
+  $('#lang-select')?.addEventListener('change', ev => {
+    localStorage.setItem('guanaco-lang', ev.target.value);
+    applyI18n();
+    applyTheme(localStorage.getItem('guanaco-theme') || 'light');
+    if (typeof onLangChange === 'function') onLangChange();
+  });
+
+  applyI18n();
   applyTheme(localStorage.getItem('guanaco-theme') || 'light');
   applyFontSize(localStorage.getItem('guanaco-font-size') || 18);
 

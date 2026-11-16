@@ -1,6 +1,15 @@
 import { $, $$, fmtGb, listen, state, switchView } from './js/state.js';
 import { initPreferences } from './js/theme.js';
-import { bootstrap, initModelsEvents, refreshControl, setChatRenderer } from './js/models.js';
+import { t } from './js/i18n.js';
+import {
+  bootstrap,
+  initModelsEvents,
+  refreshControl,
+  renderControlView,
+  renderEngineStatus,
+  renderModelsView,
+  setChatRenderer,
+} from './js/models.js';
 import {
   initChatEvents,
   loadConversations,
@@ -17,7 +26,7 @@ $$('.nav-tab').forEach(b =>
 
 listen('pull-progress', ev => {
   const p = ev.payload;
-  $('#pull-status').textContent = p.status || 'Baixando…';
+  $('#pull-status').textContent = p.status || t('downloadingStatus');
   if (p.total > 0) {
     const pct = Math.round(p.percent);
     $('#pull-pct').textContent = `${pct}%`;
@@ -67,7 +76,12 @@ listen('engine-install-progress', ev => {
   }
 });
 
-initPreferences();
+initPreferences(() => {
+  renderEngineStatus();
+  renderModelsView();
+  renderControlView();
+  if (!state.busy) renderChat();
+});
 initModelsEvents();
 initChatEvents();
 bootstrap().then(loadConversations);
