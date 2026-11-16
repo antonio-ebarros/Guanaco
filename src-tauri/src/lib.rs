@@ -252,13 +252,15 @@ async fn list_running_models() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn unload_model(model: String) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    client
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(2000))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let _ = client
         .post(format!("{OLLAMA_URL}/api/generate"))
         .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
         .send()
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
     Ok(())
 }
 

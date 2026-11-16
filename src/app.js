@@ -216,7 +216,7 @@ async function bootstrap() {
     installed = [];
   }
   renderModelsView();
-  renderChat();
+  if (!busy) renderChat();
 }
 
 async function startEngine() {
@@ -751,10 +751,13 @@ $('#btn-stop').onclick = async () => {
     const last = conv?.messages?.[conv.messages.length - 1];
     if (last && last.role === 'assistant') {
       if (!String(last.content || '').trim()) {
-        last.content = '*Geração cancelada.*';
+        last.cancelled = true;
+        last.content = 'Geração cancelada.';
       }
       if (activeStreamBubble) {
-        activeStreamBubble.querySelector('.msg-body').innerHTML = renderMarkdown(last.content);
+        const body = activeStreamBubble.querySelector('.msg-body');
+        if (last.cancelled) body.innerHTML = `<em class="muted">Geração cancelada.</em>`;
+        else body.innerHTML = renderMarkdown(last.content);
       }
       await persistConversations();
     }
@@ -762,6 +765,25 @@ $('#btn-stop').onclick = async () => {
     setGenerating(false);
   }
 };
+
+function buildApiMessages(msgs) {
+  const out = [];
+  for (let i = 0; i < msgs.length - 1; i++) {
+    const cur = msgs[i];
+    const next = msgs[i + 1];
+    if (cur.role === 'user' && next && next.role === 'assistant' && next.cancelled) {
+      i++; // pula o par cancelado (ex: documento pesado que o usuário cancelou)
+      continue;
+    }
+    if (cur.cancelled || !String(cur.content || '').trim()) continue;
+    out.push({
+      role: cur.role,
+      content: cur.content,
+      images: cur.images || [],
+    });
+  }
+  return out;
+}
 
 $('#composer').onsubmit = async e => {
   e.preventDefault();
@@ -830,11 +852,7 @@ $('#composer').onsubmit = async e => {
       req: {
         convId: conv.id,
         model,
-        messages: conv.messages.slice(0, -1).map(m => ({
-          role: m.role,
-          content: m.content,
-          images: m.images || [],
-        })),
+        messages: buildApiMessages(conv.messages),
       },
     });
   } catch (err) {
@@ -847,9 +865,10 @@ $('#composer').onsubmit = async e => {
     setGenerating(false);
     const last = conv.messages[conv.messages.length - 1];
     if (last && last.role === 'assistant' && !String(last.content || '').trim()) {
-      last.content = streamCancelled ? '*Geração cancelada.*' : '*Sem resposta do modelo.*';
+      last.cancelled = streamCancelled;
+      last.content = streamCancelled ? 'Geração cancelada.' : 'Sem resposta do modelo.';
       if (activeStreamBubble) {
-        activeStreamBubble.querySelector('.msg-body').innerHTML = renderMarkdown(last.content);
+        activeStreamBubble.querySelector('.msg-body').innerHTML = `<em class="muted">${last.content}</em>`;
       }
     }
     await persistConversations();
