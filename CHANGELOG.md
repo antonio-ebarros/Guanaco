@@ -1,6 +1,14 @@
 # Changelog
 
-## [0.1.0] - Em desenvolvimento
+## [0.2.0] - 2026-11-16
+- Instalação automática do motor local Ollama em 1 clique (Linux e Windows), sem terminal.
+- Recomendação inteligente de modelos (RAM livre, VRAM livre, reserva do SO, CPU e modelos ativos) + preset leve `moondream` e **Modo econômico (poupar CPU)**.
+- Miniaturas de imagens (redimensionadas até 640px), selos limpos de documentos anexados, indicador animado **"Pensando… Xs"**, botão **Parar** e encerramento automático do runner ao cancelar ou sair.
+- Botões discretos **🔊 Ouvir** e **📋 Copiar** nas respostas.
+- Arquitetura modularizada (Fase 2): backend Rust (`engine.rs` com trait `AiEngine`, `hardware.rs`, `ollama.rs`, `storage.rs`) e frontend em ES Modules (`src/js/`).
+- Licença oficial **Apache-2.0** adicionada ao repositório.
+
+## [0.1.0] - Inicial
 - Estrutura inicial do projeto desktop multiplataforma (Windows e Linux) com **Tauri v2**.
 - Documentação inicial (`README.md`, `docs/ARQUITETURA.md`) e pipeline de build em GitHub Actions (`.github/workflows/build.yml`).
 - Detecção de hardware local (RAM, CPU, GPU) e painel de controle/transparência para modelos locais via Ollama.
