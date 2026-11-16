@@ -336,11 +336,45 @@ async fn pull_model(app: AppHandle, model: String) -> Result<(), String> {
     Ok(())
 }
 
+fn stop_stuck_runner() {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = Command::new("pkill").args(["-TERM", "-x", "llama-server"]).output();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "ollama_llama_server.exe"])
+            .creation_flags(0x08000000)
+            .output();
+    }
+}
+
 #[tauri::command]
 async fn cancel_chat(state: State<'_, AppState>) -> Result<(), String> {
     if let Ok(mut guard) = state.chat_cancel.lock() {
         if let Some(tx) = guard.take() {
             let _ = tx.send(true);
+        }
+    }
+    // Se o runner estiver preso em prompt eval (ex: imagem pesada), força a parada se keep_alive:0 demorar >800ms
+    let model_opt = state.active_model.lock().ok().and_then(|g| g.clone());
+    if let Some(model) = model_opt {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(800))
+            .build();
+        let ok = if let Ok(c) = client {
+            c.post(format!("{OLLAMA_URL}/api/generate"))
+                .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
+                .send()
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+        if !ok {
+            stop_stuck_runner();
         }
     }
     Ok(())
@@ -515,36 +549,23 @@ fn cleanup_on_exit(app: &AppHandle) {
         }
     }
 
-    if had_active_chat {
-        if let Ok(m_guard) = state.active_model.lock() {
-            if let Some(model) = m_guard.as_ref().cloned() {
-                tauri::async_runtime::block_on(async move {
-                    let client = reqwest::Client::builder()
-                        .timeout(std::time::Duration::from_millis(700))
-                        .build();
-                    if let Ok(c) = client {
-                        let _ = c
-                            .post(format!("{OLLAMA_URL}/api/generate"))
-                            .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
-                            .send()
-                            .await;
-                    }
-                });
-            }
+    let used_model = state.active_model.lock().ok().and_then(|mut g| g.take());
+    if had_active_chat || used_model.is_some() {
+        if let Some(model) = used_model {
+            tauri::async_runtime::block_on(async move {
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_millis(700))
+                    .build();
+                if let Ok(c) = client {
+                    let _ = c
+                        .post(format!("{OLLAMA_URL}/api/generate"))
+                        .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
+                        .send()
+                        .await;
+                }
+            });
         }
-        // Garante que nenhum runner do Ollama fique fritando CPU após fechar o app
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = Command::new("pkill").args(["-TERM", "-x", "llama-server"]).output();
-        }
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            let _ = Command::new("taskkill")
-                .args(["/F", "/IM", "ollama_llama_server.exe"])
-                .creation_flags(0x08000000)
-                .output();
-        }
+        stop_stuck_runner();
     }
 }
 
