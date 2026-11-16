@@ -14,13 +14,13 @@ const KOKORO_VOICES_URL: &str =
     "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin";
 
 pub struct TtsState {
-    pub engine: Mutex<Option<KokoroEngine>>,
+    pub engine: std::sync::Arc<Mutex<Option<KokoroEngine>>>,
 }
 
 impl Default for TtsState {
     fn default() -> Self {
         Self {
-            engine: Mutex::new(None),
+            engine: std::sync::Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -230,10 +230,9 @@ pub async fn synthesize_kokoro(
     }
     .to_string();
 
-    let state_arc = state.inner();
-    let wav_bytes = tokio::task::block_in_place(|| -> Result<Vec<u8>, String> {
-        let mut guard = state_arc
-            .engine
+    let engine_arc = state.engine.clone();
+    let wav_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let mut guard = engine_arc
             .lock()
             .map_err(|_| "Falha ao acessar motor de voz.".to_string())?;
 
@@ -241,7 +240,7 @@ pub async fn synthesize_kokoro(
             let mut engine = KokoroEngine::with_espeak(Some(espeak_bin), None);
             let params = KokoroModelParams {
                 num_threads: Some(2),
-                optimized_model_cache_path: Some(dir.join("kokoro_opt.ort")),
+                optimized_model_cache_path: None,
             };
             engine
                 .load_model_with_params(&dir, params)
@@ -277,7 +276,9 @@ pub async fn synthesize_kokoro(
             writer.finalize().map_err(|e| e.to_string())?;
         }
         Ok(cursor.into_inner())
-    })?;
+    })
+    .await
+    .map_err(|e| format!("Erro na thread de voz: {e}"))??;
 
     Ok(format!("data:audio/wav;base64,{}", encode_base64(&wav_bytes)))
 }

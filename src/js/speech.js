@@ -3,6 +3,7 @@ import { getLang, getSpeechLang, t } from './i18n.js';
 
 let activeSpeakBtn = null;
 let activeAudio = null;
+let speakSession = 0;
 
 function cleanTextForSpeech(mdText) {
   return String(mdText || '')
@@ -13,7 +14,23 @@ function cleanTextForSpeech(mdText) {
     .trim();
 }
 
+function splitSentences(text, maxLen = 180) {
+  const parts = text.split(/(?<=[.!?。！？])\s+/).filter(Boolean);
+  const chunks = [];
+  for (const part of parts) {
+    if (part.length <= maxLen) {
+      chunks.push(part);
+    } else {
+      for (let i = 0; i < part.length; i += maxLen) {
+        chunks.push(part.slice(i, i + maxLen));
+      }
+    }
+  }
+  return chunks.length ? chunks : [text];
+}
+
 export function stopSpeaking() {
+  speakSession++;
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
   }
@@ -29,6 +46,26 @@ export function stopSpeaking() {
   }
 }
 
+function playWav(dataUrl, sessionId) {
+  return new Promise((resolve, reject) => {
+    if (sessionId !== speakSession) {
+      resolve();
+      return;
+    }
+    const audio = new Audio(dataUrl);
+    activeAudio = audio;
+    audio.onended = () => {
+      if (activeAudio === audio) activeAudio = null;
+      resolve();
+    };
+    audio.onerror = () => {
+      if (activeAudio === audio) activeAudio = null;
+      reject(new Error('audio playback error'));
+    };
+    audio.play().catch(reject);
+  });
+}
+
 export async function toggleSpeak(btn, text) {
   const wasSame = activeSpeakBtn === btn;
   stopSpeaking();
@@ -37,35 +74,35 @@ export async function toggleSpeak(btn, text) {
   const clean = cleanTextForSpeech(text);
   if (!clean) return;
 
+  const sessionId = ++speakSession;
   activeSpeakBtn = btn;
   btn.classList.add('active');
 
   try {
     const st = await invoke('get_tts_status');
+    if (sessionId !== speakSession) return;
     if (st?.installed && st?.espeakReady) {
       btn.textContent = '⏳ …';
-      const wavDataUrl = await invoke('synthesize_kokoro', {
-        text: clean,
-        lang: getLang(),
-      });
-      if (activeSpeakBtn !== btn) return; // foi parado enquanto sintetizava
-      const audio = new Audio(wavDataUrl);
-      activeAudio = audio;
-      btn.textContent = t('speakStop');
-      audio.onended = () => {
-        if (activeSpeakBtn === btn) stopSpeaking();
-      };
-      audio.onerror = () => {
-        if (activeSpeakBtn === btn) stopSpeaking();
-      };
-      await audio.play();
+      const chunks = splitSentences(clean);
+      const lang = getLang();
+      for (let i = 0; i < chunks.length; i++) {
+        if (sessionId !== speakSession) return;
+        const wavDataUrl = await invoke('synthesize_kokoro', {
+          text: chunks[i],
+          lang,
+        });
+        if (sessionId !== speakSession) return;
+        btn.textContent = t('speakStop');
+        await playWav(wavDataUrl, sessionId);
+      }
+      if (sessionId === speakSession && activeSpeakBtn === btn) stopSpeaking();
       return;
     }
   } catch {
     // Fallback automático para speechSynthesis do sistema
   }
 
-  if (activeSpeakBtn !== btn) return;
+  if (sessionId !== speakSession || activeSpeakBtn !== btn) return;
   if (!('speechSynthesis' in window)) {
     btn.textContent = t('speakUnavailable');
     setTimeout(() => stopSpeaking(), 1800);
@@ -77,10 +114,10 @@ export async function toggleSpeak(btn, text) {
   utter.rate = 1.0;
   btn.textContent = t('speakStop');
   utter.onend = () => {
-    if (activeSpeakBtn === btn) stopSpeaking();
+    if (sessionId === speakSession && activeSpeakBtn === btn) stopSpeaking();
   };
   utter.onerror = () => {
-    if (activeSpeakBtn === btn) stopSpeaking();
+    if (sessionId === speakSession && activeSpeakBtn === btn) stopSpeaking();
   };
   window.speechSynthesis.speak(utter);
 }
