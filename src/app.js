@@ -144,15 +144,19 @@ function renderChat() {
   }
 
   for (const m of conv.messages) {
-    appendBubble(m.role, m.content, m.previews || m.images || []);
+    appendBubble(m.role, m.displayContent ?? m.content, m.previews || m.images || [], m.fileNames || []);
   }
   log.scrollTop = log.scrollHeight;
 }
 
-function appendBubble(role, content, media = []) {
+function renderThinkingHtml(label = 'Pensando', sec = 0) {
+  return `<div class="thinking-indicator"><span class="thinking-dots"><span></span><span></span><span></span></span><span>${label}… ${sec}s</span></div>`;
+}
+
+function appendBubble(role, content, media = [], fileNames = [], thinkingLabel = null) {
   const el = document.createElement('div');
   el.className = `msg ${role}`;
-  el.innerHTML = `<div class="msg-role">${role === 'user' ? 'Você' : 'Guanaco'}</div><div class="msg-thumbs" hidden></div><div class="msg-body"></div>`;
+  el.innerHTML = `<div class="msg-role">${role === 'user' ? 'Você' : 'Guanaco'}</div><div class="msg-thumbs" hidden></div><div class="msg-files" hidden></div><div class="msg-body"></div>`;
   const thumbs = el.querySelector('.msg-thumbs');
   if (Array.isArray(media) && media.length) {
     thumbs.hidden = false;
@@ -164,8 +168,20 @@ function appendBubble(role, content, media = []) {
       thumbs.append(img);
     }
   }
+  const filesBox = el.querySelector('.msg-files');
+  if (Array.isArray(fileNames) && fileNames.length) {
+    filesBox.hidden = false;
+    for (const name of fileNames) {
+      const tag = document.createElement('span');
+      tag.className = 'msg-file-tag';
+      tag.textContent = `📄 ${name}`;
+      filesBox.append(tag);
+    }
+  }
   const body = el.querySelector('.msg-body');
-  if (typeof renderMarkdown === 'function') {
+  if (thinkingLabel && !String(content || '').trim()) {
+    body.innerHTML = renderThinkingHtml(thinkingLabel, 0);
+  } else if (typeof renderMarkdown === 'function') {
     body.innerHTML = renderMarkdown(content || '');
   } else {
     body.textContent = content || '';
@@ -695,6 +711,28 @@ function renderChips() {
 $('#btn-new-chat').onclick = newConversation;
 
 let activeStreamBubble = null;
+let thinkingTimer = null;
+let streamCancelled = false;
+
+function stopThinkingTimer() {
+  if (thinkingTimer) {
+    clearInterval(thinkingTimer);
+    thinkingTimer = null;
+  }
+}
+
+function startThinkingTimer(label = 'Pensando') {
+  stopThinkingTimer();
+  const startedAt = Date.now();
+  thinkingTimer = setInterval(() => {
+    if (!activeStreamBubble) return;
+    const sec = Math.floor((Date.now() - startedAt) / 1000);
+    const body = activeStreamBubble.querySelector('.msg-body');
+    if (body && body.querySelector('.thinking-indicator')) {
+      body.innerHTML = renderThinkingHtml(label, sec);
+    }
+  }, 1000);
+}
 
 function setGenerating(active) {
   busy = active;
@@ -705,15 +743,20 @@ function setGenerating(active) {
 
 $('#btn-stop').onclick = async () => {
   if (!busy) return;
+  streamCancelled = true;
+  stopThinkingTimer();
   try {
     await invoke('cancel_chat');
     const conv = activeConv();
     const last = conv?.messages?.[conv.messages.length - 1];
-    if (last && last.role === 'assistant' && !last.content) {
-      last.content = '*Geração cancelada.*';
+    if (last && last.role === 'assistant') {
+      if (!String(last.content || '').trim()) {
+        last.content = '*Geração cancelada.*';
+      }
       if (activeStreamBubble) {
         activeStreamBubble.querySelector('.msg-body').innerHTML = renderMarkdown(last.content);
       }
+      await persistConversations();
     }
   } finally {
     setGenerating(false);
@@ -728,48 +771,87 @@ $('#composer').onsubmit = async e => {
     switchView('models');
     return;
   }
-  let text = editorToMarkdown(input);
-  if (!text && !attachments.length) return;
+  const typedText = editorToMarkdown(input);
+  if (!typedText && !attachments.length) return;
 
   const imgAtts = attachments.filter(a => a.kind === 'image');
   const imgs = imgAtts.map(a => a.data);
   const previews = imgAtts.map(a => a.previewUrl || `data:image/png;base64,${a.data}`);
   const textFiles = attachments.filter(a => a.kind === 'text');
+  const fileNames = textFiles.map(f => f.name);
+
+  let fullText = typedText;
   if (textFiles.length) {
     const extra = textFiles.map(f => `\n\n--- Arquivo: ${f.name} ---\n\`\`\`\n${f.data}\n\`\`\``).join('');
-    text = (text + extra).trim();
+    fullText = (fullText + extra).trim();
   }
+  const displayContent = typedText || (fileNames.length ? 'Analise os arquivos anexados:' : '');
+
   attachments = [];
   renderChips();
   input.innerHTML = '';
 
   const conv = activeConv();
   if (conv.title === 'Nova conversa') {
-    conv.title = text.replace(/[#>*`-]/g, '').trim().slice(0, 38) || 'Conversa';
+    const titleBase = typedText || fileNames[0] || 'Conversa';
+    conv.title = titleBase.replace(/[#>*`-]/g, '').trim().slice(0, 38) || 'Conversa';
     renderConvList();
   }
-  conv.messages.push({ role: 'user', content: text, images: imgs, previews });
+  conv.messages.push({
+    role: 'user',
+    content: fullText,
+    displayContent,
+    images: imgs,
+    previews,
+    fileNames,
+  });
   if (conv.messages.length === 1) $('#chat-log').innerHTML = '';
-  appendBubble('user', text, previews);
+  appendBubble('user', displayContent, previews, fileNames);
 
+  const thinkingLabel = imgs.length ? 'Analisando imagem' : (fileNames.length ? 'Lendo documento' : 'Pensando');
   conv.messages.push({ role: 'assistant', content: '' });
-  activeStreamBubble = appendBubble('assistant', '…');
+  activeStreamBubble = appendBubble('assistant', '', [], [], thinkingLabel);
   $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
 
+  streamCancelled = false;
   setGenerating(true);
+  startThinkingTimer(thinkingLabel);
   try {
+    // Descarrega outros modelos carregados para não acumular 2+ modelos na RAM/VRAM
+    try {
+      const ps = await invoke('list_running_models');
+      const others = (ps.models || []).filter(r => r.name && r.name !== model);
+      for (const o of others) {
+        await invoke('unload_model', { model: o.name });
+      }
+    } catch {}
+
     await invoke('chat_stream', {
       req: {
         convId: conv.id,
         model,
-        messages: conv.messages.slice(0, -1),
+        messages: conv.messages.slice(0, -1).map(m => ({
+          role: m.role,
+          content: m.content,
+          images: m.images || [],
+        })),
       },
     });
   } catch (err) {
-    conv.messages[conv.messages.length - 1].content = `Erro: ${err}`;
-    activeStreamBubble.querySelector('.msg-body').textContent = `Erro: ${err}`;
+    if (!streamCancelled) {
+      conv.messages[conv.messages.length - 1].content = `Erro: ${err}`;
+      activeStreamBubble.querySelector('.msg-body').textContent = `Erro: ${err}`;
+    }
   } finally {
+    stopThinkingTimer();
     setGenerating(false);
+    const last = conv.messages[conv.messages.length - 1];
+    if (last && last.role === 'assistant' && !String(last.content || '').trim()) {
+      last.content = streamCancelled ? '*Geração cancelada.*' : '*Sem resposta do modelo.*';
+      if (activeStreamBubble) {
+        activeStreamBubble.querySelector('.msg-body').innerHTML = renderMarkdown(last.content);
+      }
+    }
     await persistConversations();
   }
 };
@@ -786,6 +868,7 @@ listen('pull-progress', ev => {
 });
 
 listen('chat-event', ev => {
+  if (streamCancelled) return;
   const { convId, delta, done, error } = ev.payload;
   const conv = conversations.find(c => c.id === convId);
   if (!conv) return;
@@ -796,11 +879,17 @@ listen('chat-event', ev => {
 
   if (convId === activeConvId && activeStreamBubble) {
     const body = activeStreamBubble.querySelector('.msg-body');
-    if (typeof renderMarkdown === 'function') body.innerHTML = renderMarkdown(last.content || '…');
-    else body.textContent = last.content;
+    if (String(last.content || '').trim()) {
+      stopThinkingTimer();
+      if (typeof renderMarkdown === 'function') body.innerHTML = renderMarkdown(last.content);
+      else body.textContent = last.content;
+    }
     $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
   }
-  if (done) persistConversations();
+  if (done) {
+    stopThinkingTimer();
+    persistConversations();
+  }
 });
 
 // ---- Tema & Tamanho da Fonte ----
