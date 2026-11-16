@@ -21,3 +21,7 @@ sysinfo = "0.33"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+tar = "0.4"
+zstd = "0.13"

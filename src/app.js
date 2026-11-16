@@ -109,14 +109,25 @@ function renderChat() {
     box.className = 'welcome-box';
     box.innerHTML = sysInfo?.ollamaInstalled
       ? `<h2>Motor de IA desligado</h2>
-         <p>O motor local (Ollama) está instalado no seu computador, mas está parado no momento.</p>
+         <p>O motor local está instalado no seu computador, mas está parado no momento.</p>
          <button id="wb-start" class="btn-primary" type="button">Ligar Motor de IA agora</button>`
       : `<h2>Bem-vindo ao Guanaco</h2>
-         <p>Para rodar modelos de IA offline no seu PC, instale o motor gratuito <b>Ollama</b> (ollama.com) e clique em atualizar.</p>
-         <button id="wb-recheck" class="btn-ghost" type="button">Verificar novamente</button>`;
+         <p>Para rodar modelos de IA 100% no seu computador (sem enviar nada para a nuvem), precisamos preparar o motor local na primeira abertura.</p>
+         <div id="eng-install-box" hidden style="display:flex;flex-direction:column;gap:8px;">
+           <div class="row-between">
+             <strong id="eng-install-status">Preparando…</strong>
+             <span id="eng-install-pct">0%</span>
+           </div>
+           <div class="progress-track"><div id="eng-install-fill" class="progress-fill"></div></div>
+         </div>
+         <div style="display:flex;gap:8px;flex-wrap:wrap;">
+           <button id="wb-install" class="btn-primary" type="button">Preparar Motor Automático (1 clique)</button>
+           <button id="wb-recheck" class="btn-ghost" type="button">Verificar novamente</button>
+         </div>`;
     log.append(box);
     box.querySelector('#wb-start')?.addEventListener('click', startEngine);
     box.querySelector('#wb-recheck')?.addEventListener('click', bootstrap);
+    box.querySelector('#wb-install')?.addEventListener('click', installEngine);
     return;
   }
 
@@ -933,6 +944,37 @@ listen('chat-event', ev => {
   if (done) {
     stopThinkingTimer();
     persistConversations();
+  }
+});
+
+async function installEngine() {
+  const btn = $('#wb-install');
+  const box = $('#eng-install-box');
+  if (btn) btn.disabled = true;
+  if (box) box.hidden = false;
+  try {
+    await invoke('install_ollama');
+    await bootstrap();
+  } catch (e) {
+    const st = $('#eng-install-status');
+    if (st) st.textContent = `Erro: ${e}`;
+    if (btn) btn.disabled = false;
+  }
+}
+
+listen('engine-install-progress', ev => {
+  const p = ev.payload;
+  const st = $('#eng-install-status');
+  const pctEl = $('#eng-install-pct');
+  const fill = $('#eng-install-fill');
+  if (!st) return;
+  if (p.total > 0) {
+    const pct = Math.round(p.percent);
+    st.textContent = `${p.status} (${fmtGb(p.completed)} / ${fmtGb(p.total)})`;
+    if (pctEl) pctEl.textContent = `${pct}%`;
+    if (fill) fill.style.width = `${pct}%`;
+  } else {
+    st.textContent = p.status || 'Preparando…';
   }
 });
 

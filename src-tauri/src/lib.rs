@@ -80,7 +80,22 @@ pub struct ChatEvent {
     pub error: Option<String>,
 }
 
-fn find_ollama_binary() -> Option<String> {
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineInstallProgress {
+    pub status: String,
+    pub completed: u64,
+    pub total: u64,
+    pub percent: f64,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+fn engine_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("engine"))
+}
+
+fn find_ollama_binary(app: &AppHandle) -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         if Command::new("where").arg("ollama").output().map(|o| o.status.success()).unwrap_or(false) {
@@ -95,6 +110,14 @@ fn find_ollama_binary() -> Option<String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
+        if let Some(eng) = engine_dir(app) {
+            for rel in ["bin/ollama", "ollama"] {
+                let p = eng.join(rel);
+                if p.is_file() {
+                    return Some(p.to_string_lossy().to_string());
+                }
+            }
+        }
         if Command::new("which").arg("ollama").output().map(|o| o.status.success()).unwrap_or(false) {
             return Some("ollama".to_string());
         }
@@ -175,7 +198,7 @@ async fn is_ollama_up() -> bool {
 }
 
 #[tauri::command]
-async fn get_system_info() -> SystemInfo {
+async fn get_system_info(app: AppHandle) -> SystemInfo {
     let mut sys = System::new_all();
     sys.refresh_memory();
     let cpu_name = sys
@@ -199,20 +222,35 @@ async fn get_system_info() -> SystemInfo {
         gpu_name,
         gpu_vram_total_gb,
         gpu_vram_free_gb,
-        ollama_installed: find_ollama_binary().is_some(),
+        ollama_installed: find_ollama_binary(&app).is_some(),
         ollama_running: is_ollama_up().await,
         models_dir: default_models_dir(),
     }
 }
 
 #[tauri::command]
-async fn start_ollama(state: State<'_, AppState>) -> Result<bool, String> {
+async fn start_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
     if is_ollama_up().await {
         return Ok(true);
     }
-    let bin = find_ollama_binary().ok_or("Ollama não encontrado neste computador.")?;
-    let mut cmd = Command::new(bin);
+    let bin = find_ollama_binary(&app).ok_or("Ollama não encontrado neste computador.")?;
+    let mut cmd = Command::new(&bin);
     cmd.arg("serve");
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(eng) = engine_dir(&app) {
+            let lib_dir = eng.join("lib").join("ollama");
+            if lib_dir.is_dir() {
+                let prev = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                let joined = if prev.is_empty() {
+                    lib_dir.to_string_lossy().to_string()
+                } else {
+                    format!("{}:{prev}", lib_dir.to_string_lossy())
+                };
+                cmd.env("LD_LIBRARY_PATH", joined);
+            }
+        }
+    }
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -223,13 +261,136 @@ async fn start_ollama(state: State<'_, AppState>) -> Result<bool, String> {
         *guard = Some(child);
     }
 
-    for _ in 0..20 {
+    for _ in 0..25 {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         if is_ollama_up().await {
             return Ok(true);
         }
     }
     Err("O motor Ollama demorou para responder na porta 11434.".to_string())
+}
+
+#[tauri::command]
+async fn install_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    if find_ollama_binary(&app).is_some() {
+        return start_ollama(app, state).await;
+    }
+
+    let eng = engine_dir(&app).ok_or("Pasta de dados do usuário indisponível.")?;
+    std::fs::create_dir_all(&eng).map_err(|e| e.to_string())?;
+
+    let emit_prog = |status: &str, completed: u64, total: u64, done: bool, error: Option<String>| {
+        let percent = if total > 0 {
+            (completed as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        let _ = app.emit(
+            "engine-install-progress",
+            EngineInstallProgress {
+                status: status.to_string(),
+                completed,
+                total,
+                percent,
+                done,
+                error,
+            },
+        );
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let url = "https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64.tar.zst";
+    #[cfg(target_os = "windows")]
+    let url = "https://github.com/ollama/ollama/releases/latest/download/OllamaSetup.exe";
+
+    emit_prog("Conectando ao servidor oficial…", 0, 0, false, None);
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(url).send().await.map_err(|e| {
+        let msg = format!("Falha ao baixar motor: {e}");
+        emit_prog(&msg, 0, 0, true, Some(msg.clone()));
+        msg
+    })?;
+
+    if !resp.status().is_success() {
+        let msg = format!("Erro ao baixar motor (HTTP {})", resp.status());
+        emit_prog(&msg, 0, 0, true, Some(msg.clone()));
+        return Err(msg);
+    }
+
+    let total = resp.content_length().unwrap_or(0);
+    #[cfg(not(target_os = "windows"))]
+    let tmp_path = eng.join("ollama-download.tar.zst.tmp");
+    #[cfg(target_os = "windows")]
+    let tmp_path = eng.join("OllamaSetup.exe");
+
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp_path).map_err(|e| e.to_string())?;
+        let mut stream = resp.bytes_stream();
+        let mut downloaded: u64 = 0;
+        let mut last_emit: u64 = 0;
+
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk.map_err(|e| e.to_string())?;
+            file.write_all(&bytes).map_err(|e| e.to_string())?;
+            downloaded += bytes.len() as u64;
+            if downloaded - last_emit >= 1_048_576 || (total > 0 && downloaded >= total) {
+                last_emit = downloaded;
+                emit_prog("Baixando motor de IA local…", downloaded, total, false, None);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        emit_prog("Extraindo arquivos do motor…", total, total, false, None);
+        let tmp_clone = tmp_path.clone();
+        let eng_clone = eng.clone();
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
+            use std::os::unix::fs::PermissionsExt;
+            let f = std::fs::File::open(&tmp_clone).map_err(|e| e.to_string())?;
+            let dec = zstd::stream::read::Decoder::new(f).map_err(|e| e.to_string())?;
+            let mut archive = tar::Archive::new(dec);
+            archive.unpack(&eng_clone).map_err(|e| e.to_string())?;
+            for rel in ["bin/ollama", "ollama"] {
+                let bin = eng_clone.join(rel);
+                if bin.is_file() {
+                    let _ = std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755));
+                }
+            }
+            let _ = std::fs::remove_file(&tmp_clone);
+            Ok(())
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        emit_prog("Instalando motor no Windows…", total, total, false, None);
+        let setup_path = tmp_path.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            Command::new(&setup_path)
+                .args(["/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+                .status()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("Falha ao executar instalador: {e}"))?;
+        let _ = std::fs::remove_file(&tmp_path);
+        if !status.success() {
+            return Err("O instalador do Ollama foi cancelado ou falhou.".to_string());
+        }
+    }
+
+    emit_prog("Ligando motor local…", total, total, false, None);
+    let started = start_ollama(app.clone(), state).await?;
+    emit_prog("Motor pronto!", total, total, true, None);
+    Ok(started)
 }
 
 #[tauri::command]
@@ -597,6 +758,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_system_info,
             start_ollama,
+            install_ollama,
             list_installed_models,
             list_running_models,
             unload_model,
