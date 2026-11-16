@@ -26,7 +26,7 @@ Objetivo: dividir responsabilidades antes que `lib.rs` e `app.js` fiquem grandes
 - **Frontend (`src/`):**
   - [x] Separar `app.js` em módulos ES (`state.js`, `chat.js`, `models.js`, `theme.js`, `speech.js`).
   - [x] Acessibilidade e utilidade: botões discretos **"🔊 Ouvir"** (ler em voz alta) e **"📋 Copiar"** nas respostas.
-  - [x] Melhoria de voz: integrado TTS local natural (**Kokoro-82M** via `ort`/ONNX sob demanda) e suporte a 3 idiomas (`Português`, `English`, `中文`).
+  - [x] Melhoria de voz: integrado TTS local natural (**Piper TTS** sob demanda em processo separado) e suporte a 3 idiomas (`Português`, `English`, `中文`).
 
 ---
 

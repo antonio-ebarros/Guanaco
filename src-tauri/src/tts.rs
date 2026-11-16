@@ -1,36 +1,19 @@
 use futures_util::StreamExt;
 use serde::Serialize;
-use std::io::Cursor;
-use std::path::PathBuf;
-use std::process::Command;
-use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
-use tts_rs::engines::kokoro::{KokoroEngine, KokoroInferenceParams, KokoroModelParams};
-use tts_rs::SynthesisEngine;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use tauri::{AppHandle, Emitter, Manager};
 
-const KOKORO_MODEL_URL: &str =
-    "https://github.com/taylorchu/kokoro-onnx/releases/download/v0.2.0/kokoro-quant-convinteger.onnx";
-const KOKORO_VOICES_URL: &str =
-    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin";
-
-pub struct TtsState {
-    pub engine: std::sync::Arc<Mutex<Option<KokoroEngine>>>,
-}
-
-impl Default for TtsState {
-    fn default() -> Self {
-        Self {
-            engine: std::sync::Arc::new(Mutex::new(None)),
-        }
-    }
-}
+const PIPER_LINUX_URL: &str =
+    "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz";
+const PIPER_WIN_URL: &str =
+    "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TtsStatus {
     pub installed: bool,
-    pub espeak_ready: bool,
-    pub loaded: bool,
     pub dir: String,
 }
 
@@ -49,69 +32,50 @@ fn tts_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|d| d.join("tts"))
 }
 
-fn find_espeak_bin() -> Option<PathBuf> {
+fn piper_bin_path(dir: &Path) -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        if Command::new("where")
-            .arg("espeak-ng")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return Some(PathBuf::from("espeak-ng"));
-        }
-        for p in [
-            r"C:\Program Files\eSpeak NG\espeak-ng.exe",
-            r"C:\Program Files (x86)\eSpeak NG\espeak-ng.exe",
-        ] {
-            if PathBuf::from(p).is_file() {
-                return Some(PathBuf::from(p));
-            }
-        }
-        None
+        dir.join("piper").join("piper.exe")
     }
     #[cfg(not(target_os = "windows"))]
     {
-        if Command::new("which")
-            .arg("espeak-ng")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return Some(PathBuf::from("espeak-ng"));
-        }
-        for p in ["/usr/bin/espeak-ng", "/usr/local/bin/espeak-ng"] {
-            if PathBuf::from(p).is_file() {
-                return Some(PathBuf::from(p));
-            }
-        }
-        None
+        dir.join("piper").join("piper")
     }
 }
 
-fn models_ready(dir: &PathBuf) -> bool {
-    dir.join("kokoro-quant-convinteger.onnx").is_file() && dir.join("voices-v1.0.bin").is_file()
+fn voice_info(lang: &str) -> (&'static str, &'static str) {
+    match lang {
+        "zh" => (
+            "zh_CN-huayan-medium",
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx",
+        ),
+        "en" => (
+            "en_US-lessac-medium",
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx",
+        ),
+        _ => (
+            "pt_BR-faber-medium",
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx",
+        ),
+    }
+}
+
+fn is_voice_ready(dir: &Path, lang: &str) -> bool {
+    let (name, _) = voice_info(lang);
+    let voices_dir = dir.join("voices");
+    voices_dir.join(format!("{name}.onnx")).is_file()
+        && voices_dir.join(format!("{name}.onnx.json")).is_file()
 }
 
 #[tauri::command]
-pub fn get_tts_status(app: AppHandle, state: State<'_, TtsState>) -> TtsStatus {
+pub fn get_tts_status(app: AppHandle, lang: Option<String>) -> TtsStatus {
     let dir = tts_dir(&app).unwrap_or_else(|| PathBuf::from("tts"));
-    let installed = models_ready(&dir);
-    let loaded = state.engine.lock().map(|g| g.is_some()).unwrap_or(false);
+    let l = lang.unwrap_or_else(|| "pt".to_string());
+    let installed = piper_bin_path(&dir).is_file() && is_voice_ready(&dir, &l);
     TtsStatus {
         installed,
-        espeak_ready: find_espeak_bin().is_some(),
-        loaded,
         dir: dir.to_string_lossy().to_string(),
     }
-}
-
-#[tauri::command]
-pub fn unload_kokoro_tts(state: State<'_, TtsState>) -> Result<(), String> {
-    if let Ok(mut g) = state.engine.lock() {
-        *g = None;
-    }
-    Ok(())
 }
 
 async fn download_file(
@@ -131,7 +95,6 @@ async fn download_file(
     let total = resp.content_length().unwrap_or(0);
     let tmp = dest.with_extension("tmp");
     {
-        use std::io::Write;
         let mut file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
         let mut stream = resp.bytes_stream();
         let mut downloaded: u64 = 0;
@@ -140,7 +103,7 @@ async fn download_file(
             let bytes = chunk.map_err(|e| e.to_string())?;
             file.write_all(&bytes).map_err(|e| e.to_string())?;
             downloaded += bytes.len() as u64;
-            if downloaded - last_emit >= 524_288 || (total > 0 && downloaded >= total) {
+            if downloaded - last_emit >= 262_144 || (total > 0 && downloaded >= total) {
                 last_emit = downloaded;
                 let percent = if total > 0 {
                     (downloaded as f64 / total as f64) * 100.0
@@ -165,24 +128,68 @@ async fn download_file(
 }
 
 #[tauri::command]
-pub async fn install_kokoro_tts(app: AppHandle) -> Result<bool, String> {
+pub async fn install_piper_tts(app: AppHandle, lang: String) -> Result<bool, String> {
     let dir = tts_dir(&app).ok_or("Pasta de dados indisponível.")?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let voices_dir = dir.join("voices");
+    std::fs::create_dir_all(&voices_dir).map_err(|e| e.to_string())?;
 
-    let model_path = dir.join("kokoro-quant-convinteger.onnx");
-    let voices_path = dir.join("voices-v1.0.bin");
-
-    if !model_path.is_file() {
-        download_file(&app, KOKORO_MODEL_URL, &model_path, "Baixando modelo Kokoro…").await?;
+    if !piper_bin_path(&dir).is_file() {
+        #[cfg(not(target_os = "windows"))]
+        {
+            let archive_path = dir.join("piper.tar.gz");
+            download_file(&app, PIPER_LINUX_URL, &archive_path, "Baixando Piper TTS…").await?;
+            let dir_c = dir.clone();
+            let arc_c = archive_path.clone();
+            tokio::task::spawn_blocking(move || -> Result<(), String> {
+                use std::os::unix::fs::PermissionsExt;
+                let f = std::fs::File::open(&arc_c).map_err(|e| e.to_string())?;
+                let gz = flate2::read::GzDecoder::new(f);
+                let mut tar = tar::Archive::new(gz);
+                tar.unpack(&dir_c).map_err(|e| e.to_string())?;
+                let bin = piper_bin_path(&dir_c);
+                if bin.is_file() {
+                    let _ = std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755));
+                }
+                let _ = std::fs::remove_file(&arc_c);
+                Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())??;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let archive_path = dir.join("piper.zip");
+            download_file(&app, PIPER_WIN_URL, &archive_path, "Downloading Piper TTS…").await?;
+            let dir_c = dir.clone();
+            let arc_c = archive_path.clone();
+            tokio::task::spawn_blocking(move || -> Result<(), String> {
+                let f = std::fs::File::open(&arc_c).map_err(|e| e.to_string())?;
+                let mut zip = zip::ZipArchive::new(f).map_err(|e| e.to_string())?;
+                zip.extract(&dir_c).map_err(|e| e.to_string())?;
+                let _ = std::fs::remove_file(&arc_c);
+                Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())??;
+        }
     }
-    if !voices_path.is_file() {
-        download_file(&app, KOKORO_VOICES_URL, &voices_path, "Baixando vozes Kokoro…").await?;
+
+    let (voice_name, onnx_url) = voice_info(&lang);
+    let onnx_dest = voices_dir.join(format!("{voice_name}.onnx"));
+    let json_dest = voices_dir.join(format!("{voice_name}.onnx.json"));
+    let json_url = format!("{onnx_url}.json");
+
+    if !onnx_dest.is_file() {
+        download_file(&app, onnx_url, &onnx_dest, "Baixando voz natural…").await?;
+    }
+    if !json_dest.is_file() {
+        download_file(&app, &json_url, &json_dest, "Baixando config da voz…").await?;
     }
 
     let _ = app.emit(
         "tts-install-progress",
         TtsInstallProgress {
-            status: "Voz Kokoro pronta!".to_string(),
+            status: "Voz pronta!".to_string(),
             completed: 1,
             total: 1,
             percent: 100.0,
@@ -210,75 +217,65 @@ fn encode_base64(input: &[u8]) -> String {
 }
 
 #[tauri::command]
-pub async fn synthesize_kokoro(
+pub async fn synthesize_piper(
     app: AppHandle,
-    state: State<'_, TtsState>,
     text: String,
     lang: String,
 ) -> Result<String, String> {
     let dir = tts_dir(&app).ok_or("Pasta de dados indisponível.")?;
-    if !models_ready(&dir) {
-        return Err("Kokoro não instalado.".to_string());
+    let bin = piper_bin_path(&dir);
+    if !bin.is_file() || !is_voice_ready(&dir, &lang) {
+        return Err("Voz natural não instalada para este idioma.".to_string());
     }
-    let espeak_bin = find_espeak_bin()
-        .ok_or("espeak-ng não encontrado no sistema (instale espeak-ng para usar Kokoro).")?;
 
-    let voice = match lang.as_str() {
-        "zh" => "zf_xiaobei",
-        "en" => "af_heart",
-        _ => "pf_dora",
-    }
-    .to_string();
+    let (voice_name, _) = voice_info(&lang);
+    let model_path = dir.join("voices").join(format!("{voice_name}.onnx"));
+    let out_wav = dir.join(format!("out-{}.wav", std::process::id()));
 
-    let engine_arc = state.engine.clone();
     let wav_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let mut guard = engine_arc
-            .lock()
-            .map_err(|_| "Falha ao acessar motor de voz.".to_string())?;
+        let mut cmd = Command::new(&bin);
+        cmd.arg("--model")
+            .arg(&model_path)
+            .arg("--output_file")
+            .arg(&out_wav)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
 
-        if guard.is_none() {
-            let mut engine = KokoroEngine::with_espeak(Some(espeak_bin), None);
-            let params = KokoroModelParams {
-                num_threads: Some(2),
-                optimized_model_cache_path: None,
-            };
-            engine
-                .load_model_with_params(&dir, params)
-                .map_err(|e| format!("Erro ao carregar Kokoro: {e}"))?;
-            *guard = Some(engine);
-        }
-
-        let engine = guard.as_mut().unwrap();
-        let res = engine
-            .synthesize(
-                &text,
-                Some(KokoroInferenceParams {
-                    voice,
-                    speed: 1.0,
-                    style_index: None,
-                }),
-            )
-            .map_err(|e| format!("Erro ao sintetizar voz: {e}"))?;
-
-        let mut cursor = Cursor::new(Vec::new());
+        #[cfg(not(target_os = "windows"))]
         {
-            let spec = hound::WavSpec {
-                channels: 1,
-                sample_rate: res.sample_rate,
-                bits_per_sample: 16,
-                sample_format: hound::SampleFormat::Int,
-            };
-            let mut writer = hound::WavWriter::new(&mut cursor, spec).map_err(|e| e.to_string())?;
-            for s in res.samples {
-                let amp = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-                writer.write_sample(amp).map_err(|e| e.to_string())?;
+            if let Some(parent) = bin.parent() {
+                let prev = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                let joined = if prev.is_empty() {
+                    parent.to_string_lossy().to_string()
+                } else {
+                    format!("{}:{prev}", parent.to_string_lossy())
+                };
+                cmd.env("LD_LIBRARY_PATH", joined);
             }
-            writer.finalize().map_err(|e| e.to_string())?;
         }
-        Ok(cursor.into_inner())
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+
+        let mut child = cmd.spawn().map_err(|e| format!("Falha ao iniciar Piper: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+        }
+        let output = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).to_string();
+            let _ = std::fs::remove_file(&out_wav);
+            return Err(format!("Erro no Piper: {err}"));
+        }
+        let bytes = std::fs::read(&out_wav).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(&out_wav);
+        Ok(bytes)
     })
     .await
-    .map_err(|e| format!("Erro na thread de voz: {e}"))??;
+    .map_err(|e| e.to_string())??;
 
     Ok(format!("data:audio/wav;base64,{}", encode_base64(&wav_bytes)))
 }

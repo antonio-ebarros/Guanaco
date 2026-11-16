@@ -10,7 +10,6 @@ use tauri::{Manager, WindowEvent};
 pub fn run() {
     tauri::Builder::default()
         .manage(ollama::AppState::default())
-        .manage(tts::TtsState::default())
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
                 ollama::cleanup_on_exit(window.app_handle());
@@ -30,9 +29,8 @@ pub fn run() {
             storage::load_conversations,
             storage::save_conversations,
             tts::get_tts_status,
-            tts::install_kokoro_tts,
-            tts::unload_kokoro_tts,
-            tts::synthesize_kokoro
+            tts::install_piper_tts,
+            tts::synthesize_piper
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Guanaco");

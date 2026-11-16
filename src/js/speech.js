@@ -79,15 +79,15 @@ export async function toggleSpeak(btn, text) {
   btn.classList.add('active');
 
   try {
-    const st = await invoke('get_tts_status');
+    const lang = getLang();
+    const st = await invoke('get_tts_status', { lang });
     if (sessionId !== speakSession) return;
-    if (st?.installed && st?.espeakReady) {
+    if (st?.installed) {
       btn.textContent = '⏳ …';
       const chunks = splitSentences(clean);
-      const lang = getLang();
       for (let i = 0; i < chunks.length; i++) {
         if (sessionId !== speakSession) return;
-        const wavDataUrl = await invoke('synthesize_kokoro', {
+        const wavDataUrl = await invoke('synthesize_piper', {
           text: chunks[i],
           lang,
         });

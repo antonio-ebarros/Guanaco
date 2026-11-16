@@ -1,5 +1,5 @@
 import { $, PRESETS, fmtGb, invoke, state, switchView } from './state.js';
-import { t } from './i18n.js';
+import { getLang, t } from './i18n.js';
 
 let onRenderChat = () => {};
 
@@ -282,23 +282,13 @@ export async function renderTtsCard() {
   const box = $('#tts-card');
   if (!box) return;
   try {
-    const st = await invoke('get_tts_status');
-    const espeakWarn = !st.espeakReady
-      ? `<p class="muted" style="margin-top:4px;">${t('voiceEspeakMissing')}</p>`
-      : '';
+    const lang = getLang();
+    const st = await invoke('get_tts_status', { lang });
     if (st.installed) {
       box.innerHTML = `
-        <div class="row-between">
-          <span>${t('voiceReady')}</span>
-          ${st.loaded ? `<button id="btn-tts-unload" class="btn-ghost small" type="button">${t('voiceUnloadBtn')}</button>` : ''}
-        </div>
+        <div>${t('voiceReady')}</div>
         <div class="muted"><code>${st.dir}</code></div>
-        ${espeakWarn}
       `;
-      $('#btn-tts-unload')?.addEventListener('click', async () => {
-        await invoke('unload_kokoro_tts');
-        await renderTtsCard();
-      });
     } else {
       box.innerHTML = `
         <p class="muted">${t('voiceNotInstalled')}</p>
@@ -312,7 +302,6 @@ export async function renderTtsCard() {
         <div class="row-between">
           <button id="btn-tts-install" class="btn-primary" type="button">${t('voiceDownloadBtn')}</button>
         </div>
-        ${espeakWarn}
       `;
       $('#btn-tts-install')?.addEventListener('click', async () => {
         const btn = $('#btn-tts-install');
@@ -320,7 +309,7 @@ export async function renderTtsCard() {
         if (btn) btn.disabled = true;
         if (prog) prog.hidden = false;
         try {
-          await invoke('install_kokoro_tts');
+          await invoke('install_piper_tts', { lang });
           await renderTtsCard();
         } catch (e) {
           const ps = $('#tts-prog-status');
