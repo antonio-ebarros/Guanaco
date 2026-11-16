@@ -41,3 +41,7 @@ npm run tauri build
 ```
 
 Consulte [docs/ARQUITETURA.md](docs/ARQUITETURA.md) para detalhes técnicos do backend e da interface.
+
+## Licença
+
+Distribuído sob a licença **Apache-2.0**. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
