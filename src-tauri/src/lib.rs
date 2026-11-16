@@ -67,6 +67,8 @@ pub struct ChatRequest {
     pub conv_id: String,
     pub model: String,
     pub messages: Vec<ChatMessageIn>,
+    #[serde(default)]
+    pub eco_mode: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -409,13 +411,25 @@ async fn chat_stream(
         })
         .collect();
 
+    let mut payload = serde_json::json!({
+        "model": req.model,
+        "messages": msgs,
+        "stream": true
+    });
+    if req.eco_mode {
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let eco_threads = (cores / 2).max(2);
+        payload["options"] = serde_json::json!({
+            "num_thread": eco_threads,
+            "num_ctx": 2048
+        });
+    }
+
     let send_fut = client
         .post(format!("{OLLAMA_URL}/api/chat"))
-        .json(&serde_json::json!({
-            "model": req.model,
-            "messages": msgs,
-            "stream": true
-        }))
+        .json(&payload)
         .send();
 
     let resp = tokio::select! {

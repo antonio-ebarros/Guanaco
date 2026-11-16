@@ -7,7 +7,8 @@ const $$ = s => [...document.querySelectorAll(s)];
 const PRESETS = [
   { id: 'qwen2.5:1.5b', name: 'Rápido e Leve', sizeGb: 1.0, neededMemGb: 1.8, desc: 'Ideal para computadores básicos e respostas rápidas no dia a dia.' },
   { id: 'llama3.2:3b', name: 'Equilibrado', sizeGb: 2.0, neededMemGb: 2.8, desc: 'Ótimo equilíbrio entre velocidade, português claro e resumos.' },
-  { id: 'gemma3:4b', name: 'Com Visão (Imagens)', sizeGb: 3.3, neededMemGb: 4.2, desc: 'Além de texto, entende fotos e prints que você anexar.' },
+  { id: 'moondream', name: 'Visão Leve (Imagens)', sizeGb: 1.7, neededMemGb: 2.3, desc: 'Analisa fotos e prints sem pesar em computadores mais simples.' },
+  { id: 'gemma3:4b', name: 'Visão Avançada', sizeGb: 3.3, neededMemGb: 4.2, desc: 'Mais detalhado para imagens e textos, ideal para GPUs com 6 GB+ ou bastante RAM.' },
   { id: 'qwen2.5:7b', name: 'Mais Capaz', sizeGb: 4.7, neededMemGb: 5.8, desc: 'Melhor raciocínio e textos longos para PCs com mais memória.' },
 ];
 
@@ -875,6 +876,7 @@ $('#composer').onsubmit = async e => {
       req: {
         convId: conv.id,
         model,
+        ecoMode: $('#eco-mode-toggle')?.checked || false,
         messages: buildApiMessages(conv.messages),
       },
     });
@@ -968,5 +970,13 @@ $('#btn-font-inc')?.addEventListener('click', () => {
 
 applyTheme(localStorage.getItem('guanaco-theme') || 'light');
 applyFontSize(localStorage.getItem('guanaco-font-size') || 18);
+
+const ecoToggle = $('#eco-mode-toggle');
+if (ecoToggle) {
+  ecoToggle.checked = localStorage.getItem('guanaco-eco-mode') === '1';
+  ecoToggle.addEventListener('change', () => {
+    localStorage.setItem('guanaco-eco-mode', ecoToggle.checked ? '1' : '0');
+  });
+}
 
 bootstrap().then(loadConversations);

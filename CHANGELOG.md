@@ -11,3 +11,4 @@
 - Persistência atômica com backup automático (`conversations.bak.json`) em `save_conversations`/`load_conversations` e plano de evolução documentado em `docs/ROADMAP.md`.
 - Miniatura de imagens enviadas (qualquer formato) nos chips e nas bolhas do chat, botão **Parar** para cancelar geração em andamento e limpeza automática do motor/geração ao fechar o app.
 - Indicador animado **"Pensando… Xs"** / **"Analisando imagem… Xs"** durante a geração, selo limpo (`📄 arquivo`) para documentos anexados sem poluir o chat, correção de balão vazio ao cancelar e descarregamento automático do modelo anterior ao trocar de modelo.
+- Adicionado preset de visão leve (`moondream`) para computadores com menos VRAM/RAM e opção **Modo econômico (poupar CPU)** limitando `num_thread` e `num_ctx`.
