@@ -268,6 +268,8 @@ async fn unload_model(model: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn delete_model(model: String) -> Result<(), String> {
+    // Descarrega da RAM/VRAM antes de apagar do disco para não deixar modelo fantasma na memória
+    let _ = unload_model(model.clone()).await;
     let client = reqwest::Client::new();
     let resp = client
         .delete(format!("{OLLAMA_URL}/api/delete"))
