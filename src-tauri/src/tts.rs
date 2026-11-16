@@ -54,8 +54,8 @@ fn voice_info(lang: &str) -> (&'static str, &'static str) {
             "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx",
         ),
         _ => (
-            "pt_BR-faber-medium",
-            "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx",
+            "pt_BR-edresson-low",
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/edresson/low/pt_BR-edresson-low.onnx",
         ),
     }
 }
@@ -237,8 +237,14 @@ pub async fn synthesize_piper(
         cmd.arg("--model")
             .arg(&model_path)
             .arg("--output_file")
-            .arg(&out_wav)
-            .stdin(Stdio::piped())
+            .arg(&out_wav);
+        if let Some(parent) = bin.parent() {
+            let espeak_dir = parent.join("espeak-ng-data");
+            if espeak_dir.is_dir() {
+                cmd.arg("--espeak_data").arg(espeak_dir);
+            }
+        }
+        cmd.stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 
