@@ -8,3 +8,4 @@
 - Nova identidade visual com logo oficial `guanaco>_`, ícone do aplicativo 512x512, tema claro e tema escuro, efeito de vidro fosco na caixa de digitação e respostas com letra grande (`18px` por padrão) com controle rápido `A-`/`A+`.
 - Recomendação inteligente de modelos baseada em RAM disponível no momento, VRAM disponível na GPU, núcleos da CPU, reserva do sistema operacional e modelos já carregados na memória.
 - Licença oficial **Apache-2.0** adicionada ao repositório (`LICENSE`, `Cargo.toml`, `package.json` e `README.md`).
+- Persistência atômica com backup automático (`conversations.bak.json`) em `save_conversations`/`load_conversations` e plano de evolução documentado em `docs/ROADMAP.md`.
