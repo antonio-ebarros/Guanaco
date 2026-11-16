@@ -5,7 +5,13 @@
 O Guanaco é dividido em duas camadas leves:
 
 1. **Frontend (`src/`):**
-   - HTML/CSS/JavaScript puro (sem frameworks pesados para economizar RAM, já que modelos de IA consomem bastante memória).
+   - HTML/CSS/JavaScript modular (`ES Modules`, sem frameworks pesados para economizar RAM):
+     - `app.js`: orquestrador principal e listeners de eventos do Tauri.
+     - `js/state.js`: estado compartilhado, presets de modelos e utilitários.
+     - `js/theme.js`: temas claro/escuro, tamanho da fonte e Modo Econômico.
+     - `js/models.js`: detecção de hardware, catálogo de modelos e painel de controle/RAM.
+     - `js/chat.js`: histórico de conversas, anexos, editor Markdown ao vivo e streaming.
+     - `js/speech.js`: leitura em voz alta (`Ouvir`) e cópia rápida (`Copiar`) das respostas.
    - Três visões principais acessíveis na barra lateral:
      - **Conversa:** chat com streaming, anexos de texto/imagem e editor Markdown ao vivo.
      - **Modelos:** catálogo traduzido para leigos (Leve, Equilibrado, Capaz, Visão), com selo de compatibilidade baseado no hardware detectado e barra de progresso de download.

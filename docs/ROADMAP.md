@@ -24,8 +24,8 @@ Objetivo: dividir responsabilidades antes que `lib.rs` e `app.js` fiquem grandes
   - [x] `storage.rs`: persistência atômica e backup de conversas.
   - [ ] `engine.rs` (trait `AiEngine`): abstração comum para suportar outros motores locais no futuro (ex.: `llamafile` / `llama.cpp`) sem reescrever a UI.
 - **Frontend (`src/`):**
-  - [ ] Separar `app.js` em módulos ES (`state.js`, `chat.js`, `models.js`, `control.js`, `theme.js`).
-  - [ ] Acessibilidade: opção de **"Ler resposta em voz alta"** (TTS).
+  - [x] Separar `app.js` em módulos ES (`state.js`, `chat.js`, `models.js`, `theme.js`, `speech.js`).
+  - [x] Acessibilidade e utilidade: botões discretos **"🔊 Ouvir"** (ler em voz alta) e **"📋 Copiar"** nas respostas.
 
 ---
 
