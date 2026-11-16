@@ -5,10 +5,10 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 
 const PRESETS = [
-  { id: 'qwen2.5:1.5b', name: 'Rápido e Leve', sizeGb: 1.0, minRam: 4, desc: 'Ideal para computadores básicos e respostas rápidas no dia a dia.' },
-  { id: 'llama3.2:3b', name: 'Equilibrado', sizeGb: 2.0, minRam: 6, desc: 'Ótimo equilíbrio entre velocidade, português claro e resumos.' },
-  { id: 'gemma3:4b', name: 'Com Visão (Imagens)', sizeGb: 3.3, minRam: 8, desc: 'Além de texto, entende fotos e prints que você anexar.' },
-  { id: 'qwen2.5:7b', name: 'Mais Capaz', sizeGb: 4.7, minRam: 12, desc: 'Melhor raciocínio e textos longos para PCs com mais memória.' },
+  { id: 'qwen2.5:1.5b', name: 'Rápido e Leve', sizeGb: 1.0, neededMemGb: 1.8, desc: 'Ideal para computadores básicos e respostas rápidas no dia a dia.' },
+  { id: 'llama3.2:3b', name: 'Equilibrado', sizeGb: 2.0, neededMemGb: 2.8, desc: 'Ótimo equilíbrio entre velocidade, português claro e resumos.' },
+  { id: 'gemma3:4b', name: 'Com Visão (Imagens)', sizeGb: 3.3, neededMemGb: 4.2, desc: 'Além de texto, entende fotos e prints que você anexar.' },
+  { id: 'qwen2.5:7b', name: 'Mais Capaz', sizeGb: 4.7, neededMemGb: 5.8, desc: 'Melhor raciocínio e textos longos para PCs com mais memória.' },
 ];
 
 let sysInfo = null;
@@ -212,6 +212,12 @@ async function refreshModels() {
   } catch {
     installed = [];
   }
+  try {
+    const ps = await invoke('list_running_models');
+    running = ps.models || [];
+  } catch {
+    running = [];
+  }
   const sel = $('#model-select');
   const prev = sel.value;
   sel.innerHTML = '';
@@ -225,29 +231,77 @@ async function refreshModels() {
   renderModelsView();
 }
 
+function evaluatePresetFit(p) {
+  if (!sysInfo) return { cls: 'badge-ok', label: 'Verificando PC…' };
+  const osReserve = sysInfo.osReservedGb ?? 1.5;
+  const usableRamNow = Math.max(0, (sysInfo.freeRamGb || 0) - osReserve);
+  const hasGpu = Boolean(sysInfo.gpuName);
+  const usableVramNow = hasGpu ? Math.max(0, (sysInfo.gpuVramFreeGb || 0) - 0.3) : 0;
+  const usableVramTotal = hasGpu ? Math.max(0, (sysInfo.gpuVramTotalGb || 0) - 0.3) : 0;
+  const budgetNow = usableRamNow + usableVramNow;
+  const runningMemGb = running.reduce((acc, m) => acc + (m.size || 0) / 1073741824, 0);
+  const budgetAfterUnload = budgetNow + runningMemGb;
+  const maxHardwareBudget = Math.max(0, (sysInfo.totalRamGb || 0) - osReserve) + usableVramTotal;
+  const need = p.neededMemGb;
+
+  if (usableVramNow >= need) {
+    return { cls: 'badge-ok', label: 'Roda rápido na GPU agora' };
+  }
+  if (budgetNow >= need) {
+    if (!hasGpu && (sysInfo.cpuCores || 0) <= 2 && need > 2.5) {
+      return { cls: 'badge-warn', label: 'Cabe na RAM, mas CPU lenta' };
+    }
+    return { cls: 'badge-ok', label: hasGpu ? 'Roda bem agora (GPU + RAM)' : 'Roda bem na RAM agora' };
+  }
+  if (running.length && budgetAfterUnload >= need) {
+    return { cls: 'badge-warn', label: 'Libere modelos ativos para rodar' };
+  }
+  if (maxHardwareBudget >= need) {
+    return { cls: 'badge-warn', label: `Pouca memória livre agora (~${need} GB)` };
+  }
+  return { cls: 'badge-err', label: `Pesado demais (~${need} GB em uso)` };
+}
+
 function renderModelsView() {
   if (sysInfo) {
+    const osReserve = sysInfo.osReservedGb ?? 1.5;
+    const runningMemGb = running.reduce((acc, m) => acc + (m.size || 0) / 1073741824, 0);
+    const gpuText = sysInfo.gpuName
+      ? `GPU: <b>${sysInfo.gpuName}</b> (${sysInfo.gpuVramFreeGb} GB livres de ${sysInfo.gpuVramTotalGb} GB VRAM)`
+      : `Sem GPU NVIDIA dedicada (rodará na CPU)`;
+    const runningHtml = running.length
+      ? `<div class="row-between" style="margin-top:4px;">
+           <span class="muted">Modelos carregados agora: <b>${running.length}</b> ocupando <b>${runningMemGb.toFixed(2)} GB</b></span>
+           <button id="btn-unload-all-models" class="btn-ghost small" type="button">Liberar memória</button>
+         </div>`
+      : `<div class="muted">Nenhum modelo carregado na memória no momento.</div>`;
+
     $('#hw-banner').innerHTML = `
-      <strong>Hardware detectado:</strong> ${sysInfo.totalRamGb} GB de RAM total (${sysInfo.freeRamGb} GB livres) •
-      ${sysInfo.cpuName} (${sysInfo.cpuCores} núcleos)
-      ${sysInfo.gpuName ? `• GPU: ${sysInfo.gpuName}` : '• Sem GPU NVIDIA dedicada (rodará na CPU)'}
+      <div><strong>Memória livre agora:</strong> <b>${sysInfo.freeRamGb} GB</b> livres de ${sysInfo.totalRamGb} GB totais (reservando ~${osReserve} GB para o sistema)</div>
+      <div class="muted">CPU: ${sysInfo.cpuName} (${sysInfo.cpuCores} núcleos) • ${gpuText}</div>
+      ${runningHtml}
     `;
+    $('#btn-unload-all-models')?.addEventListener('click', async () => {
+      for (const r of running) {
+        await invoke('unload_model', { model: r.name });
+      }
+      await bootstrap();
+    });
   }
 
   const grid = $('#preset-grid');
   grid.innerHTML = '';
-  const ram = sysInfo?.totalRamGb || 8;
   for (const p of PRESETS) {
-    const ok = ram >= p.minRam;
+    const fit = evaluatePresetFit(p);
     const has = installed.some(m => m.name === p.id);
     const card = document.createElement('div');
     card.className = 'info-card';
     card.innerHTML = `
       <div class="row-between">
         <strong>${p.name}</strong>
-        <span class="muted">${p.sizeGb} GB</span>
+        <span class="muted">${p.sizeGb} GB disco • ~${p.neededMemGb} GB uso</span>
       </div>
-      <span class="${ok ? 'badge-ok' : 'badge-warn'}">${ok ? 'Roda bem no seu PC' : `Recomendado ${p.minRam} GB+ RAM`}</span>
+      <span class="${fit.cls}">${fit.label}</span>
       <p class="muted">${p.desc}</p>
       <div class="row-between">
         <code class="muted">${p.id}</code>
@@ -329,10 +383,10 @@ $('#btn-refresh-control').onclick = refreshControl;
 
 async function refreshControl() {
   await bootstrap();
-  $('#ctrl-hw').textContent = `${sysInfo.totalRamGb} GB RAM (${sysInfo.freeRamGb} GB livres)`;
+  $('#ctrl-hw').textContent = `${sysInfo.freeRamGb} GB livres de ${sysInfo.totalRamGb} GB RAM`;
   $('#ctrl-gpu').textContent = sysInfo.gpuName
-    ? `CPU: ${sysInfo.cpuName} • GPU: ${sysInfo.gpuName}`
-    : `CPU: ${sysInfo.cpuName} (${sysInfo.cpuCores} núcleos)`;
+    ? `CPU: ${sysInfo.cpuName} (${sysInfo.cpuCores} núcleos) • GPU: ${sysInfo.gpuName} (${sysInfo.gpuVramFreeGb}/${sysInfo.gpuVramTotalGb} GB VRAM livres)`
+    : `CPU: ${sysInfo.cpuName} (${sysInfo.cpuCores} núcleos) • Sem GPU dedicada`;
 
   const runBox = $('#running-list');
   runBox.innerHTML = '';

@@ -544,6 +544,17 @@ select option {
 }
 [data-theme="dark"] .badge-warn { color: #f6ad7b; }
 
+.badge-err {
+  display: inline-block;
+  align-self: flex-start;
+  background: rgba(217, 72, 84, 0.15);
+  color: var(--danger);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
 .list-box {
   background: var(--card);
   border: 1px solid var(--line);

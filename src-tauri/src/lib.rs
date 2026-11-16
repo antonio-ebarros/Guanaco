@@ -15,7 +15,10 @@ pub struct SystemInfo {
     pub cpu_cores: usize,
     pub total_ram_gb: f64,
     pub free_ram_gb: f64,
+    pub os_reserved_gb: f64,
     pub gpu_name: Option<String>,
+    pub gpu_vram_total_gb: f64,
+    pub gpu_vram_free_gb: f64,
     pub ollama_installed: bool,
     pub ollama_running: bool,
     pub models_dir: String,
@@ -85,18 +88,37 @@ fn find_ollama_binary() -> Option<String> {
     None
 }
 
-fn detect_gpu() -> Option<String> {
-    let out = Command::new("nvidia-smi")
-        .args(["--query-gpu=name,memory.total", "--format=csv,noheader"])
+fn round1(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
+}
+
+fn detect_gpu() -> (Option<String>, f64, f64) {
+    let out = match Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=name,memory.total,memory.free",
+            "--format=csv,noheader,nounits",
+        ])
         .output()
-        .ok()?;
-    if out.status.success() {
-        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !s.is_empty() {
-            return Some(s.lines().next().unwrap_or("").to_string());
-        }
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return (None, 0.0, 0.0),
+    };
+    let s = String::from_utf8_lossy(&out.stdout);
+    let Some(line) = s.lines().next() else {
+        return (None, 0.0, 0.0);
+    };
+    let parts: Vec<&str> = line.split(',').map(|p| p.trim()).collect();
+    if parts.is_empty() || parts[0].is_empty() {
+        return (None, 0.0, 0.0);
     }
-    None
+    let name = parts[0].to_string();
+    let total_mib: f64 = parts.get(1).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let free_mib: f64 = parts.get(2).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    (
+        Some(name),
+        round1(total_mib / 1024.0),
+        round1(free_mib / 1024.0),
+    )
 }
 
 fn default_models_dir() -> String {
@@ -144,14 +166,20 @@ async fn get_system_info() -> SystemInfo {
         .unwrap_or_else(|| "CPU".to_string());
     let total_gb = sys.total_memory() as f64 / 1_073_741_824.0;
     let free_gb = sys.available_memory() as f64 / 1_073_741_824.0;
+    let base_os_reserve = if cfg!(target_os = "windows") { 2.0 } else { 1.5 };
+    let os_reserved = round1((total_gb * 0.12).max(base_os_reserve).min(total_gb * 0.4));
+    let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
 
     SystemInfo {
         os: std::env::consts::OS.to_string(),
         cpu_name,
         cpu_cores: sys.cpus().len(),
-        total_ram_gb: (total_gb * 10.0).round() / 10.0,
-        free_ram_gb: (free_gb * 10.0).round() / 10.0,
-        gpu_name: detect_gpu(),
+        total_ram_gb: round1(total_gb),
+        free_ram_gb: round1(free_gb),
+        os_reserved_gb: os_reserved,
+        gpu_name,
+        gpu_vram_total_gb,
+        gpu_vram_free_gb,
         ollama_installed: find_ollama_binary().is_some(),
         ollama_running: is_ollama_up().await,
         models_dir: default_models_dir(),
