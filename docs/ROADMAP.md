@@ -22,10 +22,11 @@ Objetivo: dividir responsabilidades antes que `lib.rs` e `app.js` fiquem grandes
   - [x] `hardware.rs`: detecção de RAM, CPU, GPU/VRAM e reserva do SO.
   - [x] `ollama.rs`: instalação, inicialização, modelos, streaming/cancelamento e cleanup.
   - [x] `storage.rs`: persistência atômica e backup de conversas.
-  - [ ] `engine.rs` (trait `AiEngine`): abstração comum para suportar outros motores locais no futuro (ex.: `llamafile` / `llama.cpp`) sem reescrever a UI.
+  - [x] `engine.rs` (trait `AiEngine`): abstração comum para suportar outros motores locais no futuro (ex.: `llamafile` / `llama.cpp`) sem reescrever a UI.
 - **Frontend (`src/`):**
   - [x] Separar `app.js` em módulos ES (`state.js`, `chat.js`, `models.js`, `theme.js`, `speech.js`).
   - [x] Acessibilidade e utilidade: botões discretos **"🔊 Ouvir"** (ler em voz alta) e **"📋 Copiar"** nas respostas.
+  - [ ] Melhoria futura de voz: integrar TTS local natural (ex.: **Kokoro-82M** / **Piper**) no lugar da voz padrão do sistema.
 
 ---
 

@@ -1,11 +1,16 @@
 use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::engine::{
+    AiEngine, BoxFuture, ChatEvent, ChatRequest, EngineInstallProgress, PullProgress,
+};
+
 pub const OLLAMA_URL: &str = "http://127.0.0.1:11434";
+
+pub struct OllamaEngine;
 
 pub struct AppState {
     pub chat_cancel: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
@@ -23,54 +28,59 @@ impl Default for AppState {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct PullProgress {
-    pub model: String,
-    pub status: String,
-    pub completed: u64,
-    pub total: u64,
-    pub percent: f64,
-    pub done: bool,
-    pub error: Option<String>,
-}
+impl AiEngine for OllamaEngine {
+    fn name(&self) -> &'static str {
+        "ollama"
+    }
 
-#[derive(Deserialize)]
-pub struct ChatMessageIn {
-    pub role: String,
-    pub content: String,
-    #[serde(default)]
-    pub images: Vec<String>,
-}
+    fn is_installed(&self, app: &AppHandle) -> bool {
+        find_ollama_binary(app).is_some()
+    }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatRequest {
-    pub conv_id: String,
-    pub model: String,
-    pub messages: Vec<ChatMessageIn>,
-    #[serde(default)]
-    pub eco_mode: bool,
-}
+    fn is_running(&self) -> BoxFuture<'_, bool> {
+        Box::pin(is_ollama_up())
+    }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatEvent {
-    pub conv_id: String,
-    pub delta: String,
-    pub done: bool,
-    pub error: Option<String>,
-}
+    fn start<'a>(&'a self, app: &'a AppHandle, state: &'a AppState) -> BoxFuture<'a, Result<bool, String>> {
+        Box::pin(start_ollama_impl(app, state))
+    }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EngineInstallProgress {
-    pub status: String,
-    pub completed: u64,
-    pub total: u64,
-    pub percent: f64,
-    pub done: bool,
-    pub error: Option<String>,
+    fn install<'a>(&'a self, app: &'a AppHandle, state: &'a AppState) -> BoxFuture<'a, Result<bool, String>> {
+        Box::pin(install_ollama_impl(app, state))
+    }
+
+    fn list_installed(&self) -> BoxFuture<'_, Result<serde_json::Value, String>> {
+        Box::pin(list_installed_models())
+    }
+
+    fn list_running(&self) -> BoxFuture<'_, Result<serde_json::Value, String>> {
+        Box::pin(list_running_models())
+    }
+
+    fn unload_model(&self, model: String) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(unload_model(model))
+    }
+
+    fn delete_model(&self, model: String) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(delete_model(model))
+    }
+
+    fn pull_model<'a>(&'a self, app: &'a AppHandle, model: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(pull_model_impl(app, model))
+    }
+
+    fn chat_stream<'a>(
+        &'a self,
+        app: &'a AppHandle,
+        state: &'a AppState,
+        req: ChatRequest,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(chat_stream_impl(app, state, req))
+    }
+
+    fn cancel_chat<'a>(&'a self, state: &'a AppState) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(cancel_chat_impl(state))
+    }
 }
 
 pub fn engine_dir(app: &AppHandle) -> Option<PathBuf> {
@@ -146,17 +156,16 @@ pub async fn is_ollama_up() -> bool {
         .unwrap_or(false)
 }
 
-#[tauri::command]
-pub async fn start_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn start_ollama_impl(app: &AppHandle, state: &AppState) -> Result<bool, String> {
     if is_ollama_up().await {
         return Ok(true);
     }
-    let bin = find_ollama_binary(&app).ok_or("Ollama não encontrado neste computador.")?;
+    let bin = find_ollama_binary(app).ok_or("Ollama não encontrado neste computador.")?;
     let mut cmd = Command::new(&bin);
     cmd.arg("serve");
     #[cfg(not(target_os = "windows"))]
     {
-        if let Some(eng) = engine_dir(&app) {
+        if let Some(eng) = engine_dir(app) {
             let lib_dir = eng.join("lib").join("ollama");
             if lib_dir.is_dir() {
                 let prev = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
@@ -189,12 +198,16 @@ pub async fn start_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<
 }
 
 #[tauri::command]
-pub async fn install_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
-    if find_ollama_binary(&app).is_some() {
-        return start_ollama(app, state).await;
+pub async fn start_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    start_ollama_impl(&app, &state).await
+}
+
+pub async fn install_ollama_impl(app: &AppHandle, state: &AppState) -> Result<bool, String> {
+    if find_ollama_binary(app).is_some() {
+        return start_ollama_impl(app, state).await;
     }
 
-    let eng = engine_dir(&app).ok_or("Pasta de dados do usuário indisponível.")?;
+    let eng = engine_dir(app).ok_or("Pasta de dados do usuário indisponível.")?;
     std::fs::create_dir_all(&eng).map_err(|e| e.to_string())?;
 
     let emit_prog = |status: &str, completed: u64, total: u64, done: bool, error: Option<String>| {
@@ -306,9 +319,14 @@ pub async fn install_ollama(app: AppHandle, state: State<'_, AppState>) -> Resul
     }
 
     emit_prog("Ligando motor local…", total, total, false, None);
-    let started = start_ollama(app.clone(), state).await?;
+    let started = start_ollama_impl(app, state).await?;
     emit_prog("Motor pronto!", total, total, true, None);
     Ok(started)
+}
+
+#[tauri::command]
+pub async fn install_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    install_ollama_impl(&app, &state).await
 }
 
 #[tauri::command]
@@ -361,8 +379,7 @@ pub async fn delete_model(model: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn pull_model(app: AppHandle, model: String) -> Result<(), String> {
+pub async fn pull_model_impl(app: &AppHandle, model: String) -> Result<(), String> {
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{OLLAMA_URL}/api/pull"))
@@ -418,6 +435,11 @@ pub async fn pull_model(app: AppHandle, model: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn pull_model(app: AppHandle, model: String) -> Result<(), String> {
+    pull_model_impl(&app, model).await
+}
+
 fn stop_stuck_runner() {
     #[cfg(not(target_os = "windows"))]
     {
@@ -433,8 +455,7 @@ fn stop_stuck_runner() {
     }
 }
 
-#[tauri::command]
-pub async fn cancel_chat(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn cancel_chat_impl(state: &AppState) -> Result<(), String> {
     if let Ok(mut guard) = state.chat_cancel.lock() {
         if let Some(tx) = guard.take() {
             let _ = tx.send(true);
@@ -462,9 +483,13 @@ pub async fn cancel_chat(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn chat_stream(
-    app: AppHandle,
-    state: State<'_, AppState>,
+pub async fn cancel_chat(state: State<'_, AppState>) -> Result<(), String> {
+    cancel_chat_impl(&state).await
+}
+
+pub async fn chat_stream_impl(
+    app: &AppHandle,
+    state: &AppState,
     req: ChatRequest,
 ) -> Result<(), String> {
     let (tx, mut rx) = tokio::sync::watch::channel(false);
@@ -583,6 +608,15 @@ pub async fn chat_stream(
         *guard = None;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn chat_stream(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: ChatRequest,
+) -> Result<(), String> {
+    chat_stream_impl(&app, &state, req).await
 }
 
 pub fn cleanup_on_exit(app: &AppHandle) {

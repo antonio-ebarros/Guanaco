@@ -20,6 +20,7 @@ O Guanaco é dividido em duas camadas leves:
 2. **Backend Nativo (`src-tauri/src/`):**
    - Escrito em **Rust** com **Tauri v2**, organizado em módulos:
      - `lib.rs`: inicialização do Tauri, estado compartilhado e registro dos comandos.
+     - `engine.rs` (**Interface `AiEngine`**): abstração comum de motor de IA local, permitindo acoplar novos motores (`llamafile`, `llama.cpp`) no futuro sem alterar a UI.
      - `hardware.rs` (**Diagnóstico de Hardware**): lê RAM total/disponível, reserva do SO, núcleos de CPU e VRAM livre/total da GPU (`sysinfo` + `nvidia-smi`).
      - `ollama.rs` (**Gerenciamento do Motor**): instala o Ollama automaticamente em 1 clique, inicia `ollama serve` localmente (`http://127.0.0.1:11434`), controla streaming/cancelamento, Modo Econômico e limpeza ao sair.
      - `storage.rs` (**Persistência Local**): grava e restaura conversas em JSON de forma atômica com backup automático (`conversations.bak.json`) em `app_data_dir`.

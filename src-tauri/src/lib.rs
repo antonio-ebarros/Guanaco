@@ -1,3 +1,4 @@
+mod engine;
 mod hardware;
 mod ollama;
 mod storage;

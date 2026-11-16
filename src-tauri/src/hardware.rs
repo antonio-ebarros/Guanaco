@@ -3,7 +3,8 @@ use std::process::Command;
 use sysinfo::System;
 use tauri::AppHandle;
 
-use crate::ollama::{default_models_dir, find_ollama_binary, is_ollama_up};
+use crate::engine::active_engine;
+use crate::ollama::default_models_dir;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +71,8 @@ pub async fn get_system_info(app: AppHandle) -> SystemInfo {
     let os_reserved = round1((total_gb * 0.12).max(base_os_reserve).min(total_gb * 0.4));
     let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
 
+    let engine = active_engine();
+
     SystemInfo {
         os: std::env::consts::OS.to_string(),
         cpu_name,
@@ -80,8 +83,8 @@ pub async fn get_system_info(app: AppHandle) -> SystemInfo {
         gpu_name,
         gpu_vram_total_gb,
         gpu_vram_free_gb,
-        ollama_installed: find_ollama_binary(&app).is_some(),
-        ollama_running: is_ollama_up().await,
+        ollama_installed: engine.is_installed(&app),
+        ollama_running: engine.is_running().await,
         models_dir: default_models_dir(),
     }
 }

@@ -15,3 +15,4 @@
 - Descarregamento automático do modelo antes da remoção (`delete_model`) e instalação automática do motor local em 1 clique (`install_ollama`) com progresso ao vivo para Linux e Windows.
 - Fase 2 iniciada: backend Rust modularizado em `hardware.rs`, `ollama.rs`, `storage.rs` e `lib.rs`.
 - Frontend modularizado em `src/js/` (`state.js`, `theme.js`, `models.js`, `chat.js`, `speech.js`) e botões discretos **🔊 Ouvir** e **📋 Copiar** nas respostas.
+- Fase 2 concluída: criada a interface comum `AiEngine` em `src-tauri/src/engine.rs` implementada por `OllamaEngine` (`ollama.rs`).
