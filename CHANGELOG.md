@@ -13,3 +13,4 @@
 - Indicador animado **"Pensando… Xs"** / **"Analisando imagem… Xs"** durante a geração, selo limpo (`📄 arquivo`) para documentos anexados sem poluir o chat, correção de balão vazio ao cancelar e descarregamento automático do modelo anterior ao trocar de modelo.
 - Adicionado preset de visão leve (`moondream`) para computadores com menos VRAM/RAM e opção **Modo econômico (poupar CPU)** limitando `num_thread` e `num_ctx`.
 - Descarregamento automático do modelo antes da remoção (`delete_model`) e instalação automática do motor local em 1 clique (`install_ollama`) com progresso ao vivo para Linux e Windows.
+- Fase 2 iniciada: backend Rust modularizado em `hardware.rs`, `ollama.rs`, `storage.rs` e `lib.rs`.

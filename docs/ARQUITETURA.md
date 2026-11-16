@@ -12,7 +12,8 @@ O Guanaco é dividido em duas camadas leves:
      - **Controle & Transparência:** mostra status do motor local (`127.0.0.1:11434`), uso de RAM/VRAM por modelo ativo, botão para descarregar da memória, espaço em disco ocupado e localização dos arquivos.
 
 2. **Backend Nativo (`src-tauri/src/`):**
-   - Escrito em **Rust** com **Tauri v2**.
-   - **Diagnóstico de Hardware (`sysinfo` + `nvidia-smi`):** lê RAM total/disponível, quantidade de núcleos de CPU e presença de GPU dedicada.
-   - **Gerenciamento do Motor (Ollama):** verifica se o serviço local está ativo em `http://127.0.0.1:11434`, inicia `ollama serve` com 1 clique quando instalado e consulta `/api/tags`, `/api/ps`, `/api/pull`, `/api/delete` e `/api/chat`.
-   - **Persistência Local:** conversas e preferências ficam salvas em JSON na pasta de dados do aplicativo (`app_data_dir`).
+   - Escrito em **Rust** com **Tauri v2**, organizado em módulos:
+     - `lib.rs`: inicialização do Tauri, estado compartilhado e registro dos comandos.
+     - `hardware.rs` (**Diagnóstico de Hardware**): lê RAM total/disponível, reserva do SO, núcleos de CPU e VRAM livre/total da GPU (`sysinfo` + `nvidia-smi`).
+     - `ollama.rs` (**Gerenciamento do Motor**): instala o Ollama automaticamente em 1 clique, inicia `ollama serve` localmente (`http://127.0.0.1:11434`), controla streaming/cancelamento, Modo Econômico e limpeza ao sair.
+     - `storage.rs` (**Persistência Local**): grava e restaura conversas em JSON de forma atômica com backup automático (`conversations.bak.json`) em `app_data_dir`.

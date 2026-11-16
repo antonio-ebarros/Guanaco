@@ -10,12 +10,8 @@ Objetivo: garantir que o básico funcione perfeitamente antes de adicionar novos
 - [x] Interface limpa com temas claro/escuro, vidro fosco e fonte ajustável (`A-` / `A+`).
 - [x] Detecção de hardware realista (RAM livre agora, VRAM livre, reserva do SO, CPU e modelos já carregados).
 - [x] Escrita atômica + backup automático (`conversations.bak.json`) para não perder histórico local.
-- [ ] Validação manual completa em Linux e Windows:
-  - Telas (`Conversa`, `Modelos`, `Controle`) nos dois temas.
-  - Download de modelo com barra de progresso real.
-  - Execução (chat com streaming + markdown + anexos).
-  - Remoção de modelo e liberação de RAM/VRAM.
-  - Persistência das conversas após fechar e reabrir o aplicativo.
+- [x] Validação manual completa no Linux (telas, download, remoção, execução com GPU, Modo Econômico, instalação do motor em 1 clique e persistência).
+- [ ] Validação final dos instaladores Windows (`.exe`) e Linux (`.deb`/`.AppImage`).
 
 ---
 
@@ -23,11 +19,13 @@ Objetivo: garantir que o básico funcione perfeitamente antes de adicionar novos
 Objetivo: dividir responsabilidades antes que `lib.rs` e `app.js` fiquem grandes demais.
 
 - **Backend (`src-tauri/src/`):**
-  - `hardware.rs`: detecção de RAM, CPU, GPU/VRAM e reserva do SO.
-  - `engine.rs` (trait `AiEngine`): interface comum de motor local (começando com `ollama.rs`), permitindo suportar novos motores no futuro sem reescrever a UI.
-  - `storage.rs`: persistência atômica, backup e futuras configurações do usuário.
+  - [x] `hardware.rs`: detecção de RAM, CPU, GPU/VRAM e reserva do SO.
+  - [x] `ollama.rs`: instalação, inicialização, modelos, streaming/cancelamento e cleanup.
+  - [x] `storage.rs`: persistência atômica e backup de conversas.
+  - [ ] `engine.rs` (trait `AiEngine`): abstração comum para suportar outros motores locais no futuro (ex.: `llamafile` / `llama.cpp`) sem reescrever a UI.
 - **Frontend (`src/`):**
-  - Separar em módulos ES (`state.js`, `chat.js`, `models.js`, `control.js`, `theme.js`).
+  - [ ] Separar `app.js` em módulos ES (`state.js`, `chat.js`, `models.js`, `control.js`, `theme.js`).
+  - [ ] Acessibilidade: opção de **"Ler resposta em voz alta"** (TTS).
 
 ---
 
