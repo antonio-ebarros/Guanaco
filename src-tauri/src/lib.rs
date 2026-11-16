@@ -532,6 +532,19 @@ fn cleanup_on_exit(app: &AppHandle) {
                 });
             }
         }
+        // Garante que nenhum runner do Ollama fique fritando CPU após fechar o app
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = Command::new("pkill").args(["-TERM", "-x", "llama-server"]).output();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "ollama_llama_server.exe"])
+                .creation_flags(0x08000000)
+                .output();
+        }
     }
 }
 

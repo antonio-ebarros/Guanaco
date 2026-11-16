@@ -662,16 +662,39 @@ input.addEventListener('input', () => {
 
 // ---- Anexos e Envio ----
 $('#btn-attach').onclick = () => $('#file-input').click();
+async function downscaleImage(dataUrl, maxDim = 640) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const { width, height } = img;
+      if (width <= maxDim && height <= maxDim) {
+        res(dataUrl);
+        return;
+      }
+      const scale = maxDim / Math.max(width, height);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      res(canvas.toDataURL('image/jpeg', 0.86));
+    };
+    img.onerror = () => res(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 $('#file-input').onchange = async ev => {
   for (const f of ev.target.files) {
     if (f.type.startsWith('image/')) {
-      const dataUrl = await new Promise(res => {
+      const rawUrl = await new Promise(res => {
         const r = new FileReader();
         r.onload = () => res(r.result);
         r.readAsDataURL(f);
       });
-      const b64 = String(dataUrl).split(',')[1] || '';
-      attachments.push({ name: f.name, kind: 'image', data: b64, previewUrl: String(dataUrl) });
+      const optimizedUrl = await downscaleImage(String(rawUrl), 640);
+      const b64 = String(optimizedUrl).split(',')[1] || '';
+      attachments.push({ name: f.name, kind: 'image', data: b64, previewUrl: String(optimizedUrl) });
     } else {
       const txt = await f.text();
       attachments.push({ name: f.name, kind: 'text', data: txt });
