@@ -1,6 +1,8 @@
-import { getSpeechLang, t } from './i18n.js';
+import { invoke } from './state.js';
+import { getLang, getSpeechLang, t } from './i18n.js';
 
 let activeSpeakBtn = null;
+let activeAudio = null;
 
 function cleanTextForSpeech(mdText) {
   return String(mdText || '')
@@ -15,6 +17,11 @@ export function stopSpeaking() {
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
   }
+  if (activeAudio) {
+    activeAudio.pause();
+    activeAudio.src = '';
+    activeAudio = null;
+  }
   if (activeSpeakBtn) {
     activeSpeakBtn.textContent = t('speak');
     activeSpeakBtn.classList.remove('active');
@@ -22,13 +29,7 @@ export function stopSpeaking() {
   }
 }
 
-export function toggleSpeak(btn, text) {
-  if (!('speechSynthesis' in window)) {
-    btn.textContent = t('speakUnavailable');
-    setTimeout(() => { btn.textContent = t('speak'); }, 1800);
-    return;
-  }
-
+export async function toggleSpeak(btn, text) {
   const wasSame = activeSpeakBtn === btn;
   stopSpeaking();
   if (wasSame) return;
@@ -36,21 +37,51 @@ export function toggleSpeak(btn, text) {
   const clean = cleanTextForSpeech(text);
   if (!clean) return;
 
+  activeSpeakBtn = btn;
+  btn.classList.add('active');
+
+  try {
+    const st = await invoke('get_tts_status');
+    if (st?.installed && st?.espeakReady) {
+      btn.textContent = '⏳ …';
+      const wavDataUrl = await invoke('synthesize_kokoro', {
+        text: clean,
+        lang: getLang(),
+      });
+      if (activeSpeakBtn !== btn) return; // foi parado enquanto sintetizava
+      const audio = new Audio(wavDataUrl);
+      activeAudio = audio;
+      btn.textContent = t('speakStop');
+      audio.onended = () => {
+        if (activeSpeakBtn === btn) stopSpeaking();
+      };
+      audio.onerror = () => {
+        if (activeSpeakBtn === btn) stopSpeaking();
+      };
+      await audio.play();
+      return;
+    }
+  } catch {
+    // Fallback automático para speechSynthesis do sistema
+  }
+
+  if (activeSpeakBtn !== btn) return;
+  if (!('speechSynthesis' in window)) {
+    btn.textContent = t('speakUnavailable');
+    setTimeout(() => stopSpeaking(), 1800);
+    return;
+  }
+
   const utter = new SpeechSynthesisUtterance(clean);
   utter.lang = getSpeechLang();
   utter.rate = 1.0;
-
-  activeSpeakBtn = btn;
   btn.textContent = t('speakStop');
-  btn.classList.add('active');
-
   utter.onend = () => {
     if (activeSpeakBtn === btn) stopSpeaking();
   };
   utter.onerror = () => {
     if (activeSpeakBtn === btn) stopSpeaking();
   };
-
   window.speechSynthesis.speak(utter);
 }
 

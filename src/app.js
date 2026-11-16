@@ -76,6 +76,20 @@ listen('engine-install-progress', ev => {
   }
 });
 
+listen('tts-install-progress', ev => {
+  const p = ev.payload;
+  const st = $('#tts-prog-status');
+  const pctEl = $('#tts-prog-pct');
+  const fill = $('#tts-prog-fill');
+  if (!st) return;
+  if (p.total > 0) {
+    const pct = Math.round(p.percent);
+    st.textContent = p.status;
+    if (pctEl) pctEl.textContent = `${pct}%`;
+    if (fill) fill.style.width = `${pct}%`;
+  }
+});
+
 initPreferences(() => {
   renderEngineStatus();
   renderModelsView();

@@ -274,6 +274,62 @@ export function renderControlView() {
     <div><strong>${t('modelsFolder')}</strong> <code>${s.modelsDir}</code></div>
     <div class="muted">${t('diskSummary', { count: state.installed.length, size: fmtGb(totalDisk) })}</div>
   `;
+
+  renderTtsCard();
+}
+
+export async function renderTtsCard() {
+  const box = $('#tts-card');
+  if (!box) return;
+  try {
+    const st = await invoke('get_tts_status');
+    const espeakWarn = !st.espeakReady
+      ? `<p class="muted" style="margin-top:4px;">${t('voiceEspeakMissing')}</p>`
+      : '';
+    if (st.installed) {
+      box.innerHTML = `
+        <div class="row-between">
+          <span>${t('voiceReady')}</span>
+          ${st.loaded ? `<button id="btn-tts-unload" class="btn-ghost small" type="button">${t('voiceUnloadBtn')}</button>` : ''}
+        </div>
+        <div class="muted"><code>${st.dir}</code></div>
+        ${espeakWarn}
+      `;
+      $('#btn-tts-unload')?.addEventListener('click', async () => {
+        await invoke('unload_kokoro_tts');
+        await renderTtsCard();
+      });
+    } else {
+      box.innerHTML = `
+        <p class="muted">${t('voiceNotInstalled')}</p>
+        <div id="tts-prog-box" hidden style="display:flex;flex-direction:column;gap:6px;">
+          <div class="row-between">
+            <span id="tts-prog-status" class="muted">${t('downloadingStatus')}</span>
+            <span id="tts-prog-pct">0%</span>
+          </div>
+          <div class="progress-track"><div id="tts-prog-fill" class="progress-fill"></div></div>
+        </div>
+        <div class="row-between">
+          <button id="btn-tts-install" class="btn-primary" type="button">${t('voiceDownloadBtn')}</button>
+        </div>
+        ${espeakWarn}
+      `;
+      $('#btn-tts-install')?.addEventListener('click', async () => {
+        const btn = $('#btn-tts-install');
+        const prog = $('#tts-prog-box');
+        if (btn) btn.disabled = true;
+        if (prog) prog.hidden = false;
+        try {
+          await invoke('install_kokoro_tts');
+          await renderTtsCard();
+        } catch (e) {
+          const ps = $('#tts-prog-status');
+          if (ps) ps.textContent = `${t('errPrefix')}: ${e}`;
+          if (btn) btn.disabled = false;
+        }
+      });
+    }
+  } catch {}
 }
 
 export async function refreshControl() {

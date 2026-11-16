@@ -1,6 +1,8 @@
 # Changelog
 
 ## [0.2.0] - 2026-11-16
+- Suporte completo a **3 idiomas** na interface (**Português**, **English**, **中文**) via `src/js/i18n.js`.
+- Voz natural offline com **Kokoro-82M** (módulo nativo `src-tauri/src/tts.rs` com `ort`/ONNX, download sob demanda de ~115 MB na aba Controle e fallback automático para voz do sistema).
 - Instalação automática do motor local Ollama em 1 clique (Linux e Windows), sem terminal.
 - Recomendação inteligente de modelos (RAM livre, VRAM livre, reserva do SO, CPU e modelos ativos) + preset leve `moondream` e **Modo econômico (poupar CPU)**.
 - Miniaturas de imagens (redimensionadas até 640px), selos limpos de documentos anexados, indicador animado **"Pensando… Xs"**, botão **Parar** e encerramento automático do runner ao cancelar ou sair.
