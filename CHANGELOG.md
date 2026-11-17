@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.1] - 2026-11-17
+- Cache LRU em memória para áudios do Piper TTS (`src/js/speech.js`), evitando reprocessamento ao ouvir novamente.
+- Ajuste de `temperature: 0.35` no envio ao Ollama (`src-tauri/src/ollama.rs`) e regras de confiabilidade no prompt padrão (`src-tauri/prompts/guanaco_system.txt`).
+- Compilação limpa com zero warnings no Linux/Windows (`src-tauri/src/tts.rs`).
+
 ## [0.3.0] - 2026-11-16
 - Suporte completo a **3 idiomas** na interface (**Português**, **English**, **中文**) via `src/js/i18n.js`.
 - Voz natural offline com **Piper TTS** (módulo `src-tauri/src/tts.rs`, download sob demanda na aba Controle, execução em processo separado compatível com CPUs antigas e fallback automático para voz do sistema).
