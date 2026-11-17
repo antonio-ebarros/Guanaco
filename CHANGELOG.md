@@ -3,6 +3,7 @@
 ## [0.2.0] - 2026-11-16
 - Suporte completo a **3 idiomas** na interface (**Português**, **English**, **中文**) via `src/js/i18n.js`.
 - Voz natural offline com **Piper TTS** (módulo `src-tauri/src/tts.rs`, download sob demanda de ~85 MB na aba Controle, execução em processo separado compatível com CPUs antigas e fallback automático para voz do sistema).
+- Prompt de sistema padrão embutido e oculto (`src-tauri/prompts/guanaco_system.txt`) dando contexto sobre o aplicativo e suas abas aos modelos locais, e créditos adicionados no `README.md` (incluindo **Edresson Casanova** / `TTS-Portuguese-Corpus`).
 - Instalação automática do motor local Ollama em 1 clique (Linux e Windows), sem terminal.
 - Recomendação inteligente de modelos (RAM livre, VRAM livre, reserva do SO, CPU e modelos ativos) + preset leve `moondream` e **Modo econômico (poupar CPU)**.
 - Miniaturas de imagens (redimensionadas até 640px), selos limpos de documentos anexados, indicador animado **"Pensando… Xs"**, botão **Parar** e encerramento automático do runner ao cancelar ou sair.

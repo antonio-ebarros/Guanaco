@@ -45,3 +45,9 @@ Consulte [docs/ARQUITETURA.md](docs/ARQUITETURA.md) para detalhes técnicos do b
 ## Licença
 
 Distribuído sob a licença **Apache-2.0**. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+## Créditos e Vozes Offline
+
+- **Voz em Português do Brasil (`pt_BR-edresson-low`):** baseada no conjunto de dados aberto [TTS-Portuguese-Corpus](https://github.com/Edresson/TTS-Portuguese-Corpus) criado por **Edresson Casanova** (licença **CC BY 4.0**).
+- **Sintetizador neural offline:** [Piper TTS](https://github.com/rhasspy/piper) (licença **MIT**).
+- **Motor local padrão:** [Ollama](https://ollama.com) (licença **MIT**).

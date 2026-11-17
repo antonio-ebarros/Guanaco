@@ -9,6 +9,7 @@ use crate::engine::{
 };
 
 pub const OLLAMA_URL: &str = "http://127.0.0.1:11434";
+const GUANACO_SYSTEM_PROMPT: &str = include_str!("../prompts/guanaco_system.txt");
 
 pub struct OllamaEngine;
 
@@ -503,17 +504,22 @@ pub async fn chat_stream_impl(
     }
 
     let client = reqwest::Client::new();
-    let msgs: Vec<serde_json::Value> = req
-        .messages
-        .iter()
-        .map(|m| {
-            if m.images.is_empty() {
-                serde_json::json!({ "role": m.role, "content": m.content })
-            } else {
-                serde_json::json!({ "role": m.role, "content": m.content, "images": m.images })
-            }
-        })
-        .collect();
+    let mut msgs: Vec<serde_json::Value> = Vec::with_capacity(req.messages.len() + 1);
+    if !req.messages.iter().any(|m| m.role == "system") {
+        let sys_content = format!(
+            "{}\nModelo ativo nesta conversa: {}.",
+            GUANACO_SYSTEM_PROMPT.trim(),
+            req.model
+        );
+        msgs.push(serde_json::json!({ "role": "system", "content": sys_content }));
+    }
+    for m in &req.messages {
+        if m.images.is_empty() {
+            msgs.push(serde_json::json!({ "role": m.role, "content": m.content }));
+        } else {
+            msgs.push(serde_json::json!({ "role": m.role, "content": m.content, "images": m.images }));
+        }
+    }
 
     let mut payload = serde_json::json!({
         "model": req.model,
