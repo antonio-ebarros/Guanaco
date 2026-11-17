@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(not(target_os = "windows"))]
 const PIPER_LINUX_URL: &str =
     "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz";
+#[cfg(target_os = "windows")]
 const PIPER_WIN_URL: &str =
     "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
 

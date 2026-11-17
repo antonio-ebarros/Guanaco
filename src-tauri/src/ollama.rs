@@ -521,21 +521,23 @@ pub async fn chat_stream_impl(
         }
     }
 
-    let mut payload = serde_json::json!({
-        "model": req.model,
-        "messages": msgs,
-        "stream": true
+    let mut options = serde_json::json!({
+        "temperature": 0.35
     });
     if req.eco_mode {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
         let eco_threads = (cores / 2).max(2);
-        payload["options"] = serde_json::json!({
-            "num_thread": eco_threads,
-            "num_ctx": 2048
-        });
+        options["num_thread"] = serde_json::json!(eco_threads);
+        options["num_ctx"] = serde_json::json!(2048);
     }
+    let payload = serde_json::json!({
+        "model": req.model,
+        "messages": msgs,
+        "stream": true,
+        "options": options
+    });
 
     let send_fut = client
         .post(format!("{OLLAMA_URL}/api/chat"))
