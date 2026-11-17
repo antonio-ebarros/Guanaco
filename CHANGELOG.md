@@ -4,6 +4,7 @@
 - Suporte completo a **3 idiomas** na interface (**Português**, **English**, **中文**) via `src/js/i18n.js`.
 - Voz natural offline com **Piper TTS** (módulo `src-tauri/src/tts.rs`, download sob demanda na aba Controle, execução em processo separado compatível com CPUs antigas e fallback automático para voz do sistema).
 - Prompt de sistema padrão embutido e oculto (`src-tauri/prompts/guanaco_system.txt`) com contexto sobre o aplicativo, suas abas e autoria, e créditos adicionados no `README.md` (incluindo **Edresson Casanova** / `TTS-Portuguese-Corpus`).
+- Cache LRU em memória para áudios do Piper TTS (`src/js/speech.js`) e regras de confiabilidade no prompt padrão (não inventar, admitir limitações offline e separar fatos de sugestões).
 
 ## [0.2.0] - 2026-11-16
 - Instalação automática do motor local Ollama em 1 clique (Linux e Windows), sem terminal.

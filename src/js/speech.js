@@ -4,6 +4,25 @@ import { getLang, getSpeechLang, t } from './i18n.js';
 let activeSpeakBtn = null;
 let activeAudio = null;
 let speakSession = 0;
+const TTS_CACHE_MAX = 24;
+const ttsCache = new Map();
+
+function getCachedWav(key) {
+  if (!ttsCache.has(key)) return null;
+  const val = ttsCache.get(key);
+  ttsCache.delete(key);
+  ttsCache.set(key, val);
+  return val;
+}
+
+function setCachedWav(key, val) {
+  if (ttsCache.has(key)) ttsCache.delete(key);
+  ttsCache.set(key, val);
+  if (ttsCache.size > TTS_CACHE_MAX) {
+    const oldest = ttsCache.keys().next().value;
+    ttsCache.delete(oldest);
+  }
+}
 
 function cleanTextForSpeech(mdText) {
   return String(mdText || '')
@@ -87,10 +106,15 @@ export async function toggleSpeak(btn, text) {
       const chunks = splitSentences(clean);
       for (let i = 0; i < chunks.length; i++) {
         if (sessionId !== speakSession) return;
-        const wavDataUrl = await invoke('synthesize_piper', {
-          text: chunks[i],
-          lang,
-        });
+        const cacheKey = `${lang}:${chunks[i]}`;
+        let wavDataUrl = getCachedWav(cacheKey);
+        if (!wavDataUrl) {
+          wavDataUrl = await invoke('synthesize_piper', {
+            text: chunks[i],
+            lang,
+          });
+          setCachedWav(cacheKey, wavDataUrl);
+        }
         if (sessionId !== speakSession) return;
         btn.textContent = t('speakStop');
         await playWav(wavDataUrl, sessionId);
