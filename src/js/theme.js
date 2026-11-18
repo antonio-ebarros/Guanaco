@@ -17,6 +17,24 @@ export function applyFontSize(px) {
   if (lbl) lbl.textContent = `${size}px`;
 }
 
+export function getResponseProfile() {
+  const saved = localStorage.getItem('guanaco-profile');
+  return saved === 'balanced' ? 'balanced' : 'conservative';
+}
+
+export function setResponseProfile(profile) {
+  const p = profile === 'balanced' ? 'balanced' : 'conservative';
+  localStorage.setItem('guanaco-profile', p);
+  renderProfilePill();
+}
+
+export function renderProfilePill() {
+  const pill = $('#btn-profile-pill');
+  if (!pill) return;
+  const p = getResponseProfile();
+  pill.textContent = p === 'balanced' ? t('profBalName') : t('profConsName');
+}
+
 export function initPreferences(onLangChange) {
   $('#btn-theme')?.addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -37,12 +55,14 @@ export function initPreferences(onLangChange) {
     localStorage.setItem('guanaco-lang', ev.target.value);
     applyI18n();
     applyTheme(localStorage.getItem('guanaco-theme') || 'light');
+    renderProfilePill();
     if (typeof onLangChange === 'function') onLangChange();
   });
 
   applyI18n();
   applyTheme(localStorage.getItem('guanaco-theme') || 'light');
   applyFontSize(localStorage.getItem('guanaco-font-size') || 18);
+  renderProfilePill();
 
   const ecoToggle = $('#eco-mode-toggle');
   if (ecoToggle) {

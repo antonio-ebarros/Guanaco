@@ -53,6 +53,7 @@
       <header class="view-head">
         <h1 id="chat-title" data-i18n="newConvTitle">Nova conversa</h1>
         <div class="head-right">
+          <button id="btn-profile-pill" class="profile-pill" type="button" data-i18n-title="profilePillTitle" title="Perfil de comportamento da IA"></button>
           <div class="font-ctrl">
             <button id="btn-font-dec" type="button" data-i18n-title="fontDecTitle" aria-label="Diminuir letra">A-</button>
             <span id="font-size-label">18px</span>
@@ -134,6 +135,9 @@
             <p id="ctrl-gpu" class="muted" data-i18n="checkingGpu">Verificando GPU…</p>
           </div>
         </div>
+
+        <h2 class="sec-title" data-i18n="profileSectionTitle">Perfil de Resposta</h2>
+        <div id="profile-grid" class="card-grid"></div>
 
         <h2 class="sec-title" data-i18n="memInUseTitle">Memória em uso agora (modelos carregados na RAM/VRAM)</h2>
         <div id="running-list" class="list-box"></div>

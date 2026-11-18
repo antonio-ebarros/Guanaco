@@ -35,6 +35,8 @@ pub struct ChatRequest {
     pub messages: Vec<ChatMessageIn>,
     #[serde(default)]
     pub eco_mode: bool,
+    #[serde(default)]
+    pub profile: String,
 }
 
 #[derive(Serialize, Clone)]

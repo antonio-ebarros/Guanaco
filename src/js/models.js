@@ -1,5 +1,6 @@
 import { $, PRESETS, fmtGb, invoke, state, switchView } from './state.js';
 import { getLang, t } from './i18n.js';
+import { getResponseProfile, setResponseProfile } from './theme.js';
 
 let onRenderChat = () => {};
 
@@ -238,7 +239,44 @@ export async function pullModel(name) {
   }
 }
 
+export function renderProfileGrid() {
+  const grid = $('#profile-grid');
+  if (!grid) return;
+  const active = getResponseProfile();
+  const profiles = [
+    { id: 'conservative', nameKey: 'profConsName', tagKey: 'profConsTag', descKey: 'profConsDesc', locked: false },
+    { id: 'balanced', nameKey: 'profBalName', tagKey: 'profBalTag', descKey: 'profBalDesc', locked: false },
+    { id: 'free', nameKey: 'profFreeName', tagKey: 'profFreeTag', descKey: 'profFreeDesc', locked: true },
+  ];
+  grid.innerHTML = '';
+  for (const p of profiles) {
+    const isActive = !p.locked && active === p.id;
+    const card = document.createElement('div');
+    card.className = 'info-card profile-card' + (isActive ? ' active' : '') + (p.locked ? ' locked' : '');
+    const badgeCls = p.locked ? 'badge-pro' : (isActive ? 'badge-ok' : 'badge-pro');
+    const btnHtml = p.locked
+      ? `<button class="btn-ghost small" type="button" disabled>${t('profLockedBtn')}</button>`
+      : `<button class="${isActive ? 'btn-primary' : 'btn-ghost small'}" type="button">${isActive ? t('profActive') : t('profSelect')}</button>`;
+    card.innerHTML = `
+      <div class="row-between">
+        <strong>${t(p.nameKey)}</strong>
+        <span class="${badgeCls}">${t(p.tagKey)}</span>
+      </div>
+      <p class="muted">${t(p.descKey)}</p>
+      <div class="row-between"><span></span>${btnHtml}</div>
+    `;
+    if (!p.locked) {
+      card.querySelector('button').onclick = () => {
+        setResponseProfile(p.id);
+        renderProfileGrid();
+      };
+    }
+    grid.append(card);
+  }
+}
+
 export function renderControlView() {
+  renderProfileGrid();
   const s = state.sysInfo;
   if (!s) return;
   $('#ctrl-hw').textContent = t('ctrlHwSummary', { free: s.freeRamGb, total: s.totalRamGb });

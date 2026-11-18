@@ -1,6 +1,7 @@
 # Changelog
 
 ## [0.3.1] - 2026-11-17
+- Perfis de Resposta (**🛡️ Conservador** padrão, **⚖️ Equilibrado**, e **🔓 Livre** bloqueado com selo *Guanaco Pro*) na aba Controle e pílula de atalho no cabeçalho do chat (nos 3 idiomas).
 - Cache LRU em memória para áudios do Piper TTS (`src/js/speech.js`), evitando reprocessamento ao ouvir novamente.
 - Ajuste de `temperature: 0.35` no envio ao Ollama (`src-tauri/src/ollama.rs`) e regras de confiabilidade no prompt padrão (`src-tauri/prompts/guanaco_system.txt`).
 - Compilação limpa com zero warnings no Linux/Windows (`src-tauri/src/tts.rs`).

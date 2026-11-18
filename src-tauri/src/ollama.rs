@@ -506,9 +506,14 @@ pub async fn chat_stream_impl(
     let client = reqwest::Client::new();
     let mut msgs: Vec<serde_json::Value> = Vec::with_capacity(req.messages.len() + 1);
     if !req.messages.iter().any(|m| m.role == "system") {
+        let profile_rule = match req.profile.as_str() {
+            "balanced" => "Perfil Equilibrado: permite linguagem informal, humor ácido e discussão madura sobre temas complexos de forma responsável, evitando conteúdo sexual explícito ou incentivo a danos reais.",
+            _ => "Perfil Conservador: mantenha linguagem apropriada para todas as idades (incluindo menores de idade). Recuse gerar conteúdo adulto explícito, violência gráfica ou instruções perigosas.",
+        };
         let sys_content = format!(
-            "{}\nModelo ativo nesta conversa: {}.",
+            "{}\n{}\nModelo ativo nesta conversa: {}.",
             GUANACO_SYSTEM_PROMPT.trim(),
+            profile_rule,
             req.model
         );
         msgs.push(serde_json::json!({ "role": "system", "content": sys_content }));

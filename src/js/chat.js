@@ -1,6 +1,7 @@
 import { $, invoke, state, switchView } from './state.js';
 import { bootstrap, installEngine, startEngine } from './models.js';
 import { copyResponseText, stopSpeaking, toggleSpeak } from './speech.js';
+import { getResponseProfile } from './theme.js';
 import { t } from './i18n.js';
 
 let thinkingTimer = null;
@@ -621,6 +622,7 @@ export function initChatEvents() {
           convId: conv.id,
           model,
           ecoMode: $('#eco-mode-toggle')?.checked || false,
+          profile: getResponseProfile(),
           messages: buildApiMessages(conv.messages),
         },
       });

@@ -24,6 +24,10 @@ $$('.nav-tab').forEach(b =>
   b.addEventListener('click', () => switchView(b.dataset.view, refreshControl))
 );
 
+$('#btn-profile-pill')?.addEventListener('click', () =>
+  switchView('control', refreshControl)
+);
+
 listen('pull-progress', ev => {
   const p = ev.payload;
   $('#pull-status').textContent = p.status || t('downloadingStatus');
