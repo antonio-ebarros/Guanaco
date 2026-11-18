@@ -1,6 +1,6 @@
 {
   "name": "guanaco",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Gerenciador de IA local com interface de conversa integrada",
   "license": "Apache-2.0",
   "private": true,

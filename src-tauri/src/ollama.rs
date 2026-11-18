@@ -508,7 +508,7 @@ pub async fn chat_stream_impl(
     if !req.messages.iter().any(|m| m.role == "system") {
         let profile_rule = match req.profile.as_str() {
             "balanced" => "Perfil Equilibrado: permite linguagem informal, humor ácido e discussão madura sobre temas complexos de forma responsável, evitando conteúdo sexual explícito ou incentivo a danos reais.",
-            _ => "Perfil Conservador: mantenha linguagem apropriada para todas as idades (incluindo menores de idade). Recuse gerar conteúdo adulto explícito, violência gráfica ou instruções perigosas.",
+            _ => "Perfil Conservador: mantenha linguagem apropriada para todas as idades (incluindo menores de idade). Recuse gerar conteúdo adulto explícito, violência gráfica ou instruções perigosas, e alerte contra riscos físicos no dia a dia.",
         };
         let sys_content = format!(
             "{}\n{}\nModelo ativo nesta conversa: {}.",
