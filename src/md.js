@@ -116,3 +116,4 @@ window.md = (() => {
     return html;
   };
 })();
+window.renderMarkdown = window.md;

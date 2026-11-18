@@ -51,19 +51,19 @@ impl AiEngine for OllamaEngine {
     }
 
     fn list_installed(&self) -> BoxFuture<'_, Result<serde_json::Value, String>> {
-        Box::pin(list_installed_models())
+        Box::pin(list_installed_models_impl())
     }
 
     fn list_running(&self) -> BoxFuture<'_, Result<serde_json::Value, String>> {
-        Box::pin(list_running_models())
+        Box::pin(list_running_models_impl())
     }
 
     fn unload_model(&self, model: String) -> BoxFuture<'_, Result<(), String>> {
-        Box::pin(unload_model(model))
+        Box::pin(unload_model_impl(model))
     }
 
     fn delete_model(&self, model: String) -> BoxFuture<'_, Result<(), String>> {
-        Box::pin(delete_model(model))
+        Box::pin(delete_model_impl(model))
     }
 
     fn pull_model<'a>(&'a self, app: &'a AppHandle, model: String) -> BoxFuture<'a, Result<(), String>> {
@@ -200,7 +200,7 @@ pub async fn start_ollama_impl(app: &AppHandle, state: &AppState) -> Result<bool
 
 #[tauri::command]
 pub async fn start_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
-    start_ollama_impl(&app, &state).await
+    crate::engine::active_engine().start(&app, &state).await
 }
 
 pub async fn install_ollama_impl(app: &AppHandle, state: &AppState) -> Result<bool, String> {
@@ -327,11 +327,10 @@ pub async fn install_ollama_impl(app: &AppHandle, state: &AppState) -> Result<bo
 
 #[tauri::command]
 pub async fn install_ollama(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
-    install_ollama_impl(&app, &state).await
+    crate::engine::active_engine().install(&app, &state).await
 }
 
-#[tauri::command]
-pub async fn list_installed_models() -> Result<serde_json::Value, String> {
+pub async fn list_installed_models_impl() -> Result<serde_json::Value, String> {
     let resp = reqwest::get(format!("{OLLAMA_URL}/api/tags"))
         .await
         .map_err(|e| e.to_string())?;
@@ -341,7 +340,11 @@ pub async fn list_installed_models() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn list_running_models() -> Result<serde_json::Value, String> {
+pub async fn list_installed_models() -> Result<serde_json::Value, String> {
+    crate::engine::active_engine().list_installed().await
+}
+
+pub async fn list_running_models_impl() -> Result<serde_json::Value, String> {
     let resp = reqwest::get(format!("{OLLAMA_URL}/api/ps"))
         .await
         .map_err(|e| e.to_string())?;
@@ -351,7 +354,11 @@ pub async fn list_running_models() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn unload_model(model: String) -> Result<(), String> {
+pub async fn list_running_models() -> Result<serde_json::Value, String> {
+    crate::engine::active_engine().list_running().await
+}
+
+pub async fn unload_model_impl(model: String) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(2000))
         .build()
@@ -365,8 +372,12 @@ pub async fn unload_model(model: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn delete_model(model: String) -> Result<(), String> {
-    let _ = unload_model(model.clone()).await;
+pub async fn unload_model(model: String) -> Result<(), String> {
+    crate::engine::active_engine().unload_model(model).await
+}
+
+pub async fn delete_model_impl(model: String) -> Result<(), String> {
+    let _ = unload_model_impl(model.clone()).await;
     let client = reqwest::Client::new();
     let resp = client
         .delete(format!("{OLLAMA_URL}/api/delete"))
@@ -378,6 +389,11 @@ pub async fn delete_model(model: String) -> Result<(), String> {
         return Err(format!("Erro ao remover modelo (HTTP {})", resp.status()));
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_model(model: String) -> Result<(), String> {
+    crate::engine::active_engine().delete_model(model).await
 }
 
 pub async fn pull_model_impl(app: &AppHandle, model: String) -> Result<(), String> {
@@ -438,7 +454,7 @@ pub async fn pull_model_impl(app: &AppHandle, model: String) -> Result<(), Strin
 
 #[tauri::command]
 pub async fn pull_model(app: AppHandle, model: String) -> Result<(), String> {
-    pull_model_impl(&app, model).await
+    crate::engine::active_engine().pull_model(&app, model).await
 }
 
 fn stop_stuck_runner() {
@@ -485,7 +501,7 @@ pub async fn cancel_chat_impl(state: &AppState) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn cancel_chat(state: State<'_, AppState>) -> Result<(), String> {
-    cancel_chat_impl(&state).await
+    crate::engine::active_engine().cancel_chat(&state).await
 }
 
 pub async fn chat_stream_impl(
@@ -629,7 +645,7 @@ pub async fn chat_stream(
     state: State<'_, AppState>,
     req: ChatRequest,
 ) -> Result<(), String> {
-    chat_stream_impl(&app, &state, req).await
+    crate::engine::active_engine().chat_stream(&app, &state, req).await
 }
 
 pub fn cleanup_on_exit(app: &AppHandle) {

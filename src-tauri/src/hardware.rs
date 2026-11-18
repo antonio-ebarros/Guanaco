@@ -28,32 +28,82 @@ fn round1(v: f64) -> f64 {
 }
 
 fn detect_gpu() -> (Option<String>, f64, f64) {
-    let out = match Command::new("nvidia-smi")
+    if let Ok(o) = Command::new("nvidia-smi")
         .args([
             "--query-gpu=name,memory.total,memory.free",
             "--format=csv,noheader,nounits",
         ])
         .output()
     {
-        Ok(o) if o.status.success() => o,
-        _ => return (None, 0.0, 0.0),
-    };
-    let s = String::from_utf8_lossy(&out.stdout);
-    let Some(line) = s.lines().next() else {
-        return (None, 0.0, 0.0);
-    };
-    let parts: Vec<&str> = line.split(',').map(|p| p.trim()).collect();
-    if parts.is_empty() || parts[0].is_empty() {
-        return (None, 0.0, 0.0);
+        if o.status.success() {
+            let s = String::from_utf8_lossy(&o.stdout);
+            if let Some(line) = s.lines().next() {
+                let parts: Vec<&str> = line.split(',').map(|p| p.trim()).collect();
+                if !parts.is_empty() && !parts[0].is_empty() {
+                    let name = parts[0].to_string();
+                    let total_mib: f64 = parts.get(1).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                    let free_mib: f64 = parts.get(2).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                    return (
+                        Some(name),
+                        round1(total_mib / 1024.0),
+                        round1(free_mib / 1024.0),
+                    );
+                }
+            }
+        }
     }
-    let name = parts[0].to_string();
-    let total_mib: f64 = parts.get(1).and_then(|v| v.parse().ok()).unwrap_or(0.0);
-    let free_mib: f64 = parts.get(2).and_then(|v| v.parse().ok()).unwrap_or(0.0);
-    (
-        Some(name),
-        round1(total_mib / 1024.0),
-        round1(free_mib / 1024.0),
-    )
+
+    // Fallback Linux: AMD/Intel DRM sysfs + lspci
+    #[cfg(target_os = "linux")]
+    {
+        let mut vram_total = 0.0;
+        let mut vram_free = 0.0;
+        if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("card") || name.contains('-') {
+                    continue;
+                }
+                let dev_dir = entry.path().join("device");
+                let total_bytes: u64 = std::fs::read_to_string(dev_dir.join("mem_info_vram_total"))
+                    .ok()
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0);
+                if total_bytes > 0 {
+                    let used_bytes: u64 = std::fs::read_to_string(dev_dir.join("mem_info_vram_used"))
+                        .ok()
+                        .and_then(|s| s.trim().parse().ok())
+                        .unwrap_or(0);
+                    vram_total = round1(total_bytes as f64 / 1_073_741_824.0);
+                    vram_free = round1(total_bytes.saturating_sub(used_bytes) as f64 / 1_073_741_824.0);
+                    break;
+                }
+            }
+        }
+        if let Ok(o) = Command::new("lspci").output() {
+            if o.status.success() {
+                let s = String::from_utf8_lossy(&o.stdout);
+                for line in s.lines() {
+                    if line.contains("VGA compatible controller:")
+                        || line.contains("3D controller:")
+                        || line.contains("Display controller:")
+                    {
+                        if let Some((_, desc)) = line.split_once(": ") {
+                            let clean = desc.split(" (rev ").next().unwrap_or(desc).trim().to_string();
+                            if !clean.is_empty() {
+                                return (Some(clean), vram_total, vram_free);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if vram_total > 0.0 {
+            return (Some("AMD Radeon GPU".to_string()), vram_total, vram_free);
+        }
+    }
+
+    (None, 0.0, 0.0)
 }
 
 #[tauri::command]

@@ -134,7 +134,7 @@ export function appendBubble(role, content, media = [], fileNames = [], thinking
       const img = document.createElement('img');
       img.className = 'msg-thumb';
       img.alt = 'Imagem anexada';
-      img.src = item.startsWith('data:') ? item : `data:image/png;base64,${item}`;
+      img.src = item.startsWith('data:') ? item : `data:image/jpeg;base64,${item}`;
       thumbs.append(img);
     }
   }
@@ -458,6 +458,19 @@ function buildApiMessages(msgs) {
 }
 
 export function initChatEvents() {
+  $('#chat-log')?.addEventListener('click', async ev => {
+    const btn = ev.target.closest('.code .copy');
+    if (!btn) return;
+    const codeEl = btn.closest('.code')?.querySelector('pre code');
+    if (!codeEl) return;
+    try {
+      await navigator.clipboard.writeText(codeEl.textContent || '');
+      const prev = btn.textContent;
+      btn.textContent = t('copied');
+      setTimeout(() => { btn.textContent = prev; }, 1400);
+    } catch {}
+  });
+
   input.addEventListener('keydown', e => {
     const blk = currentBlock();
     if (e.key === 'Backspace' && blk && ['H1', 'H2', 'H3', 'BLOCKQUOTE', 'PRE', 'LI'].includes(blk.tagName)) {
@@ -594,7 +607,6 @@ export function initChatEvents() {
       content: fullText,
       displayContent,
       images: imgs,
-      previews,
       fileNames,
     });
     if (conv.messages.length === 1) $('#chat-log').innerHTML = '';

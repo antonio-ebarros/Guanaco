@@ -60,8 +60,8 @@ pub struct EngineInstallProgress {
 }
 
 /// Interface comum para motores locais de IA (Ollama, llamafile, llama.cpp, etc.).
-#[allow(dead_code)]
 pub trait AiEngine: Sync {
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
     fn is_installed(&self, app: &AppHandle) -> bool;
     fn is_running(&self) -> BoxFuture<'_, bool>;

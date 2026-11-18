@@ -3,7 +3,10 @@ use serde::Serialize;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
+
+static WAV_SEQ: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(not(target_os = "windows"))]
 const PIPER_LINUX_URL: &str =
@@ -232,7 +235,8 @@ pub async fn synthesize_piper(
 
     let (voice_name, _) = voice_info(&lang);
     let model_path = dir.join("voices").join(format!("{voice_name}.onnx"));
-    let out_wav = dir.join(format!("out-{}.wav", std::process::id()));
+    let seq = WAV_SEQ.fetch_add(1, Ordering::Relaxed);
+    let out_wav = dir.join(format!("out-{}-{seq}.wav", std::process::id()));
 
     let wav_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let mut cmd = Command::new(&bin);
