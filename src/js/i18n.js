@@ -135,6 +135,11 @@ const DICT = {
     profActive: 'Ativo',
     profSelect: 'Usar este perfil',
     profLockedBtn: 'Disponível no Pro',
+    aboutBtnTitle: 'Sobre o Guanaco',
+    aboutVersion: 'versão 0.3.2',
+    aboutDesc: 'Gerenciador de IA local e conversa privada com Markdown ao vivo e voz natural offline. Gratuito e de código aberto.',
+    aboutCreatedBy: 'Criado por',
+    aboutCredits: 'Licença Apache-2.0 · Voz PT-BR: Edresson Casanova (CC BY 4.0)',
   },
   en: {
     brandSub: '100% local & private',
@@ -270,6 +275,11 @@ const DICT = {
     profActive: 'Active',
     profSelect: 'Use this profile',
     profLockedBtn: 'Available in Pro',
+    aboutBtnTitle: 'About Guanaco',
+    aboutVersion: 'version 0.3.2',
+    aboutDesc: 'Local AI manager and private chat with live Markdown and offline natural voice. Free and open source.',
+    aboutCreatedBy: 'Created by',
+    aboutCredits: 'Apache-2.0 License · PT-BR Voice: Edresson Casanova (CC BY 4.0)',
   },
   zh: {
     brandSub: '100% 本地与隐私',
@@ -405,6 +415,11 @@ const DICT = {
     profActive: '当前使用',
     profSelect: '使用此模式',
     profLockedBtn: 'Pro 版可用',
+    aboutBtnTitle: '关于 Guanaco',
+    aboutVersion: 'version 0.3.2',
+    aboutDesc: '支持实时 Markdown 与离线自然语音的本地 AI 管理器与私密对话工具。免费且开源。',
+    aboutCreatedBy: 'Created by',
+    aboutCredits: 'Apache-2.0 许可 · PT-BR 语音：Edresson Casanova (CC BY 4.0)',
   },
 };
 

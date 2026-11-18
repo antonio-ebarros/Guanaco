@@ -9,7 +9,7 @@
 <body>
   <aside id="side">
     <div class="brand">
-      <img src="guanaco-logo.png" alt="Guanaco" class="brand-logo">
+      <img id="brand-logo" src="guanaco-logo.png" alt="Guanaco" class="brand-logo" data-i18n-title="aboutBtnTitle" title="Sobre o Guanaco">
       <div class="brand-meta">
         <div class="brand-sub"><span class="lock-dot"></span> <span data-i18n="brandSub">100% local e privado</span></div>
       </div>
@@ -20,6 +20,7 @@
           <option value="zh">🌐 中文</option>
         </select>
         <button id="btn-theme" class="theme-pill" type="button">🌙 Escuro</button>
+        <button id="btn-about" class="about-pill" type="button" data-i18n-title="aboutBtnTitle" title="Sobre o Guanaco" aria-label="Sobre o Guanaco">ⓘ</button>
       </div>
     </div>
 
@@ -150,6 +151,27 @@
       </div>
     </section>
   </main>
+
+  <!-- MODAL SOBRE O GUANACO -->
+  <div id="about-modal" class="modal-overlay" hidden>
+    <div class="about-card" role="dialog" aria-modal="true" aria-labelledby="about-title">
+      <button id="btn-close-about" class="about-close" type="button" aria-label="Fechar">×</button>
+      <div class="about-icon-wrap">
+        <img src="guanaco-logo.png" alt="Guanaco" class="about-icon">
+      </div>
+      <h2 id="about-title" class="about-name">Guanaco</h2>
+      <div class="about-version" data-i18n="aboutVersion">version 0.3.2</div>
+      <p class="about-desc" data-i18n="aboutDesc">Gerenciador de IA local e conversa privada com Markdown ao vivo e voz natural offline. Gratuito e de código aberto.</p>
+      <div class="about-author"><span data-i18n="aboutCreatedBy">Criado por</span> <strong>Antonio E. Barros</strong></div>
+      <a class="about-github-btn" href="https://github.com/antonio-ebarros/Guanaco" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+        </svg>
+        <span>github.com/antonio-ebarros/Guanaco</span>
+      </a>
+      <div class="about-credits" data-i18n="aboutCredits">Licença Apache-2.0 · Voz PT-BR: Edresson Casanova (CC BY 4.0)</div>
+    </div>
+  </div>
 
   <script src="md.js"></script>
   <script type="module" src="app.js"></script>

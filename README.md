@@ -42,7 +42,9 @@ npm run tauri build
 
 Consulte [docs/ARQUITETURA.md](docs/ARQUITETURA.md) para detalhes técnicos do backend e da interface.
 
-## Licença
+## Autor e Licença
+
+Criado por **Antonio E. Barros** ([github.com/antonio-ebarros/Guanaco](https://github.com/antonio-ebarros/Guanaco)).
 
 Distribuído sob a licença **Apache-2.0**. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
 

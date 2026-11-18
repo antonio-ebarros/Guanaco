@@ -2,7 +2,7 @@
 name = "guanaco"
 version = "0.3.2"
 description = "Gerenciador de IA local com interface de conversa integrada"
-authors = ["Antonio Eduardo"]
+authors = ["Antonio E. Barros"]
 license = "Apache-2.0"
 edition = "2021"
 

@@ -28,6 +28,24 @@ $('#btn-profile-pill')?.addEventListener('click', () =>
   switchView('control', refreshControl)
 );
 
+function openAboutModal() {
+  const modal = $('#about-modal');
+  if (modal) modal.hidden = false;
+}
+function closeAboutModal() {
+  const modal = $('#about-modal');
+  if (modal) modal.hidden = true;
+}
+$('#btn-about')?.addEventListener('click', openAboutModal);
+$('#brand-logo')?.addEventListener('click', openAboutModal);
+$('#btn-close-about')?.addEventListener('click', closeAboutModal);
+$('#about-modal')?.addEventListener('click', ev => {
+  if (ev.target.id === 'about-modal') closeAboutModal();
+});
+window.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') closeAboutModal();
+});
+
 listen('pull-progress', ev => {
   const p = ev.payload;
   $('#pull-status').textContent = p.status || t('downloadingStatus');
