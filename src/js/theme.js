@@ -1,4 +1,4 @@
-import { $ } from './state.js';
+import { $, state } from './state.js';
 import { applyI18n, t } from './i18n.js';
 
 export function applyTheme(theme) {
@@ -19,11 +19,14 @@ export function applyFontSize(px) {
 
 export function getResponseProfile() {
   const saved = localStorage.getItem('guanaco-profile');
+  if (saved === 'free' && state.license?.active) return 'free';
   return saved === 'balanced' ? 'balanced' : 'conservative';
 }
 
 export function setResponseProfile(profile) {
-  const p = profile === 'balanced' ? 'balanced' : 'conservative';
+  let p = 'conservative';
+  if (profile === 'free' && state.license?.active) p = 'free';
+  else if (profile === 'balanced') p = 'balanced';
   localStorage.setItem('guanaco-profile', p);
   renderProfilePill();
 }
@@ -32,7 +35,9 @@ export function renderProfilePill() {
   const pill = $('#btn-profile-pill');
   if (!pill) return;
   const p = getResponseProfile();
-  pill.textContent = p === 'balanced' ? t('profBalName') : t('profConsName');
+  if (p === 'free') pill.textContent = t('profFreeName');
+  else if (p === 'balanced') pill.textContent = t('profBalName');
+  else pill.textContent = t('profConsName');
 }
 
 export function initPreferences(onLangChange) {

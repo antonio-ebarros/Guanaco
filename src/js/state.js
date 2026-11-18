@@ -14,6 +14,7 @@ export const PRESETS = [
 
 export const state = {
   sysInfo: null,
+  license: { active: false, tier: 'free', holder: null, email: null, issuedAt: null },
   installed: [],
   running: [],
   conversations: [],

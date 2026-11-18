@@ -519,18 +519,31 @@ pub async fn chat_stream_impl(
         *m = Some(req.model.clone());
     }
 
+    let pro_active = crate::license::is_pro_active(app);
     let client = reqwest::Client::new();
     let mut msgs: Vec<serde_json::Value> = Vec::with_capacity(req.messages.len() + 1);
     if !req.messages.iter().any(|m| m.role == "system") {
         let profile_rule = match req.profile.as_str() {
+            "free" if pro_active => "Perfil Livre (Guanaco Pro): responda de forma direta, madura e sem filtros morais ou restrições de estilo desnecessárias, priorizando a liberdade criativa, técnica e analítica do usuário.",
             "balanced" => "Perfil Equilibrado: permite linguagem informal, humor ácido e discussão madura sobre temas complexos de forma responsável, evitando conteúdo sexual explícito ou incentivo a danos reais.",
             _ => "Perfil Conservador: mantenha linguagem apropriada para todas as idades (incluindo menores de idade). Recuse gerar conteúdo adulto explícito, violência gráfica ou instruções perigosas, e alerte contra riscos físicos no dia a dia.",
         };
+        let custom_part = if pro_active {
+            req.custom_system_prompt
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| format!("\n\nInstruções personalizadas do usuário (System Prompt Pro):\n{s}"))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         let sys_content = format!(
-            "{}\n{}\nModelo ativo nesta conversa: {}.",
+            "{}\n{}\nModelo ativo nesta conversa: {}.{}",
             GUANACO_SYSTEM_PROMPT.trim(),
             profile_rule,
-            req.model
+            req.model,
+            custom_part
         );
         msgs.push(serde_json::json!({ "role": "system", "content": sys_content }));
     }
@@ -542,16 +555,39 @@ pub async fn chat_stream_impl(
         }
     }
 
+    let temp = if pro_active {
+        req.temperature.unwrap_or(0.35).clamp(0.0, 2.0)
+    } else {
+        0.35
+    };
     let mut options = serde_json::json!({
-        "temperature": 0.35
+        "temperature": temp
     });
+    if pro_active {
+        if let Some(tp) = req.top_p {
+            options["top_p"] = serde_json::json!(tp.clamp(0.05, 1.0));
+        }
+        if let Some(ctx) = req.num_ctx {
+            options["num_ctx"] = serde_json::json!(ctx.clamp(512, 131072));
+        }
+        if let Some(rp) = req.repeat_penalty {
+            options["repeat_penalty"] = serde_json::json!(rp.clamp(0.8, 2.0));
+        }
+        if let Some(ng) = req.num_gpu {
+            if ng >= 0 {
+                options["num_gpu"] = serde_json::json!(ng);
+            }
+        }
+    }
     if req.eco_mode {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
         let eco_threads = (cores / 2).max(2);
         options["num_thread"] = serde_json::json!(eco_threads);
-        options["num_ctx"] = serde_json::json!(2048);
+        if !pro_active || req.num_ctx.is_none() {
+            options["num_ctx"] = serde_json::json!(2048);
+        }
     }
     let payload = serde_json::json!({
         "model": req.model,

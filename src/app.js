@@ -1,5 +1,6 @@
 import { $, $$, fmtGb, listen, state, switchView } from './js/state.js';
 import { initPreferences } from './js/theme.js';
+import { initProChatHeader, loadLicenseStatus, renderChatPersonaSelect } from './js/pro.js';
 import { t } from './js/i18n.js';
 import {
   bootstrap,
@@ -116,8 +117,10 @@ initPreferences(() => {
   renderEngineStatus();
   renderModelsView();
   renderControlView();
+  renderChatPersonaSelect();
   if (!state.busy) renderChat();
 });
+initProChatHeader(refreshControl);
 initModelsEvents();
 initChatEvents();
-bootstrap().then(loadConversations);
+loadLicenseStatus().then(() => bootstrap()).then(loadConversations);

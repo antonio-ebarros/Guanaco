@@ -12,6 +12,7 @@
       <img id="brand-logo" src="guanaco-logo.png" alt="Guanaco" class="brand-logo" data-i18n-title="aboutBtnTitle" title="Sobre o Guanaco">
       <div class="brand-meta">
         <div class="brand-sub"><span class="lock-dot"></span> <span data-i18n="brandSub">100% local e privado</span></div>
+        <span id="brand-pro-badge" class="badge-pro-gold" hidden>✨ PRO</span>
       </div>
       <div class="brand-actions">
         <select id="lang-select" class="lang-pill" aria-label="Idioma">
@@ -55,6 +56,7 @@
         <h1 id="chat-title" data-i18n="newConvTitle">Nova conversa</h1>
         <div class="head-right">
           <button id="btn-profile-pill" class="profile-pill" type="button" data-i18n-title="profilePillTitle" title="Perfil de comportamento da IA"></button>
+          <select id="persona-select" class="persona-pill" aria-label="Personalidade Pro" hidden></select>
           <div class="font-ctrl">
             <button id="btn-font-dec" type="button" data-i18n-title="fontDecTitle" aria-label="Diminuir letra">A-</button>
             <span id="font-size-label">18px</span>
@@ -139,6 +141,10 @@
 
         <h2 class="sec-title" data-i18n="profileSectionTitle">Perfil de Resposta</h2>
         <div id="profile-grid" class="card-grid"></div>
+
+        <h2 class="sec-title" data-i18n="proSectionTitle">Guanaco Pro — Controle Avançado</h2>
+        <div id="pro-license-card" class="info-card"></div>
+        <div id="pro-studio-card" class="info-card"></div>
 
         <h2 class="sec-title" data-i18n="memInUseTitle">Memória em uso agora (modelos carregados na RAM/VRAM)</h2>
         <div id="running-list" class="list-box"></div>

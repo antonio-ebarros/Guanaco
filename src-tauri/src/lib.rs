@@ -1,5 +1,6 @@
 mod engine;
 mod hardware;
+mod license;
 mod ollama;
 mod storage;
 mod tts;
@@ -30,7 +31,10 @@ pub fn run() {
             storage::save_conversations,
             tts::get_tts_status,
             tts::install_piper_tts,
-            tts::synthesize_piper
+            tts::synthesize_piper,
+            license::get_license_status,
+            license::activate_license,
+            license::deactivate_license
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Guanaco");

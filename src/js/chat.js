@@ -2,6 +2,7 @@ import { $, invoke, state, switchView } from './state.js';
 import { bootstrap, installEngine, startEngine } from './models.js';
 import { copyResponseText, stopSpeaking, toggleSpeak } from './speech.js';
 import { getResponseProfile } from './theme.js';
+import { getEffectiveSystemPrompt, getProSettings } from './pro.js';
 import { t } from './i18n.js';
 
 let thinkingTimer = null;
@@ -629,12 +630,20 @@ export function initChatEvents() {
         }
       } catch {}
 
+      const proActive = Boolean(state.license?.active);
+      const proCfg = getProSettings();
       await invoke('chat_stream', {
         req: {
           convId: conv.id,
           model,
           ecoMode: $('#eco-mode-toggle')?.checked || false,
           profile: getResponseProfile(),
+          customSystemPrompt: getEffectiveSystemPrompt(),
+          temperature: proActive ? proCfg.temperature : null,
+          topP: proActive ? proCfg.topP : null,
+          numCtx: proActive ? proCfg.numCtx : null,
+          repeatPenalty: proActive ? proCfg.repeatPenalty : null,
+          numGpu: proActive ? proCfg.numGpu : null,
           messages: buildApiMessages(conv.messages),
         },
       });

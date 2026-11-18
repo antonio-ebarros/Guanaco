@@ -1,6 +1,7 @@
 import { $, PRESETS, fmtGb, invoke, state, switchView } from './state.js';
 import { getLang, t } from './i18n.js';
 import { getResponseProfile, setResponseProfile } from './theme.js';
+import { renderProControlSection } from './pro.js';
 
 let onRenderChat = () => {};
 
@@ -242,11 +243,12 @@ export async function pullModel(name) {
 export function renderProfileGrid() {
   const grid = $('#profile-grid');
   if (!grid) return;
+  const isPro = Boolean(state.license?.active);
   const active = getResponseProfile();
   const profiles = [
     { id: 'conservative', nameKey: 'profConsName', tagKey: 'profConsTag', descKey: 'profConsDesc', locked: false },
     { id: 'balanced', nameKey: 'profBalName', tagKey: 'profBalTag', descKey: 'profBalDesc', locked: false },
-    { id: 'free', nameKey: 'profFreeName', tagKey: 'profFreeTag', descKey: 'profFreeDesc', locked: true },
+    { id: 'free', nameKey: 'profFreeName', tagKey: 'profFreeTag', descKey: 'profFreeDesc', locked: !isPro },
   ];
   grid.innerHTML = '';
   for (const p of profiles) {
@@ -255,7 +257,7 @@ export function renderProfileGrid() {
     card.className = 'info-card profile-card' + (isActive ? ' active' : '') + (p.locked ? ' locked' : '');
     const badgeCls = p.locked ? 'badge-pro' : (isActive ? 'badge-ok' : 'badge-pro');
     const btnHtml = p.locked
-      ? `<button class="btn-ghost small" type="button" disabled>${t('profLockedBtn')}</button>`
+      ? `<button class="btn-ghost small" type="button">${t('profLockedBtn')}</button>`
       : `<button class="${isActive ? 'btn-primary' : 'btn-ghost small'}" type="button">${isActive ? t('profActive') : t('profSelect')}</button>`;
     card.innerHTML = `
       <div class="row-between">
@@ -270,6 +272,11 @@ export function renderProfileGrid() {
         setResponseProfile(p.id);
         renderProfileGrid();
       };
+    } else {
+      card.querySelector('button').onclick = () => {
+        $('#pro-license-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => $('#pro-key-input')?.focus(), 250);
+      };
     }
     grid.append(card);
   }
@@ -277,6 +284,7 @@ export function renderProfileGrid() {
 
 export function renderControlView() {
   renderProfileGrid();
+  renderProControlSection(() => renderControlView());
   const s = state.sysInfo;
   if (!s) return;
   $('#ctrl-hw').textContent = t('ctrlHwSummary', { free: s.freeRamGb, total: s.totalRamGb });

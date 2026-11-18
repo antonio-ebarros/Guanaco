@@ -37,6 +37,18 @@ pub struct ChatRequest {
     pub eco_mode: bool,
     #[serde(default)]
     pub profile: String,
+    #[serde(default)]
+    pub custom_system_prompt: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub top_p: Option<f64>,
+    #[serde(default)]
+    pub num_ctx: Option<u32>,
+    #[serde(default)]
+    pub repeat_penalty: Option<f64>,
+    #[serde(default)]
+    pub num_gpu: Option<i32>,
 }
 
 #[derive(Serialize, Clone)]
