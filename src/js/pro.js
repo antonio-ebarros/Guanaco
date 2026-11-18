@@ -289,6 +289,8 @@ export function renderProControlSection(onLicenseChanged) {
         </div>
         <select id="pro-gpu" ${isPro ? '' : 'disabled'}>
           <option value="-1" ${cfg.numGpu === -1 ? 'selected' : ''}>${t('proGpuAuto')}</option>
+          <option value="16" ${cfg.numGpu === 16 ? 'selected' : ''}>${t('proGpu16')}</option>
+          <option value="28" ${cfg.numGpu === 28 ? 'selected' : ''}>${t('proGpu28')}</option>
           <option value="99" ${cfg.numGpu === 99 ? 'selected' : ''}>${t('proGpuMax')}</option>
           <option value="0" ${cfg.numGpu === 0 ? 'selected' : ''}>${t('proGpuCpuOnly')}</option>
         </select>

@@ -601,7 +601,7 @@ pub async fn chat_stream_impl(
         .json(&payload)
         .send();
 
-    let resp = tokio::select! {
+    let mut resp = tokio::select! {
         _ = rx.changed() => {
             let _ = app.emit("chat-event", ChatEvent {
                 conv_id: req.conv_id,
@@ -614,8 +614,44 @@ pub async fn chat_stream_impl(
         r = send_fut => r.map_err(|e| e.to_string())?,
     };
 
+    // Auto-fallback inteligente: se o usuário forçou 100% GPU (num_gpu > 0) ou contexto alto
+    // e o modelo excedeu a VRAM da placa de vídeo (HTTP 500), reenvia em modo Automático (GPU + RAM).
+    if !resp.status().is_success() && pro_active && req.num_gpu.unwrap_or(-1) > 0 {
+        let mut fallback_payload = payload.clone();
+        if let Some(opts) = fallback_payload.get_mut("options").and_then(|o| o.as_object_mut()) {
+            opts.remove("num_gpu");
+        }
+        let retry_fut = client
+            .post(format!("{OLLAMA_URL}/api/chat"))
+            .json(&fallback_payload)
+            .send();
+        if let Ok(r2) = retry_fut.await {
+            resp = r2;
+        }
+    }
+
     if !resp.status().is_success() {
-        let msg = format!("Erro do motor local (HTTP {})", resp.status());
+        let status = resp.status();
+        let detail = resp
+            .text()
+            .await
+            .ok()
+            .and_then(|body| {
+                serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(String::from))
+            })
+            .unwrap_or_default();
+        let msg = if detail.to_lowercase().contains("memory") || detail.to_lowercase().contains("alloc") || status.as_u16() == 500 {
+            format!(
+                "Memória VRAM/RAM insuficiente para carregar este modelo com os parâmetros atuais (HTTP {}). Dica: em Controle → Guanaco Pro, deixe 'Camadas na GPU' em Automático ou reduza a Janela de Contexto.",
+                status
+            )
+        } else if !detail.is_empty() {
+            format!("Erro do motor local ({status}): {detail}")
+        } else {
+            format!("Erro do motor local (HTTP {status})")
+        };
         let _ = app.emit("chat-event", ChatEvent {
             conv_id: req.conv_id,
             delta: String::new(),
