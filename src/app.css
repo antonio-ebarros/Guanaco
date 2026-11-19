@@ -1079,3 +1079,24 @@ select option {
   outline: none;
   border-color: var(--accent);
 }
+.new-persona-box {
+  background: var(--hover);
+  border: 1px dashed var(--accent);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.new-persona-box textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 58px;
+  background: var(--pre-bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 11px;
+  font-family: inherit;
+  font-size: 13px;
+}

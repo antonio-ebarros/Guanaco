@@ -4,7 +4,7 @@ import { t } from './i18n.js';
 
 const STORAGE_KEY = 'guanaco-pro-settings';
 
-export const PERSONAS = [
+export const BUILTIN_PERSONAS = [
   {
     id: 'default',
     nameKey: 'personaDefaultName',
@@ -39,16 +39,11 @@ export const PERSONAS = [
     prompt:
       'Atue como um Analista Crítico e Estrategista. Estruture respostas em tópicos objetivos, apontando prós, contras, riscos e próximos passos práticos.',
   },
-  {
-    id: 'custom',
-    nameKey: 'personaCustomName',
-    descKey: 'personaCustomDesc',
-    prompt: '',
-  },
 ];
 
 export const DEFAULT_PRO_SETTINGS = {
   persona: 'default',
+  customPersonas: [],
   customPrompt: '',
   temperature: 0.35,
   topP: 0.9,
@@ -62,8 +57,13 @@ export function getProSettings() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_PRO_SETTINGS };
     const parsed = JSON.parse(raw);
+    const customPersonas = Array.isArray(parsed.customPersonas)
+      ? parsed.customPersonas.filter(p => p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.prompt === 'string')
+      : [];
+    const allIds = new Set([...BUILTIN_PERSONAS.map(p => p.id), ...customPersonas.map(p => p.id)]);
     return {
-      persona: PERSONAS.some(p => p.id === parsed.persona) ? parsed.persona : 'default',
+      persona: allIds.has(parsed.persona) ? parsed.persona : 'default',
+      customPersonas,
       customPrompt: typeof parsed.customPrompt === 'string' ? parsed.customPrompt : '',
       temperature: Number.isFinite(Number(parsed.temperature)) ? Number(parsed.temperature) : 0.35,
       topP: Number.isFinite(Number(parsed.topP)) ? Number(parsed.topP) : 0.9,
@@ -76,6 +76,24 @@ export function getProSettings() {
   }
 }
 
+export function getAllPersonas(cfg = getProSettings()) {
+  const builtins = BUILTIN_PERSONAS.map(p => ({
+    id: p.id,
+    label: t(p.nameKey),
+    desc: t(p.descKey),
+    prompt: p.prompt,
+    isCustom: false,
+  }));
+  const customs = (cfg.customPersonas || []).map(p => ({
+    id: p.id,
+    label: p.name,
+    desc: p.prompt,
+    prompt: p.prompt,
+    isCustom: true,
+  }));
+  return [...builtins, ...customs];
+}
+
 export function saveProSettings(partial) {
   const next = { ...getProSettings(), ...partial };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -86,10 +104,13 @@ export function saveProSettings(partial) {
 export function getEffectiveSystemPrompt() {
   if (!state.license?.active) return null;
   const cfg = getProSettings();
-  const personaObj = PERSONAS.find(p => p.id === cfg.persona) || PERSONAS[0];
+  const all = getAllPersonas(cfg);
+  const personaObj = all.find(p => p.id === cfg.persona) || all[0];
   const parts = [];
-  if (personaObj.prompt) parts.push(personaObj.prompt);
-  if (cfg.customPrompt && cfg.customPrompt.trim()) parts.push(cfg.customPrompt.trim());
+  if (personaObj?.prompt) parts.push(`Personalidade ativa (${personaObj.label}):\n${personaObj.prompt}`);
+  if (cfg.customPrompt && cfg.customPrompt.trim()) {
+    parts.push(`Contexto e preferências globais do usuário:\n${cfg.customPrompt.trim()}`);
+  }
   return parts.length ? parts.join('\n\n') : null;
 }
 
@@ -117,11 +138,12 @@ export function renderChatPersonaSelect() {
   if (!isPro) return;
 
   const cfg = getProSettings();
+  const all = getAllPersonas(cfg);
   sel.innerHTML = '';
-  for (const p of PERSONAS) {
+  for (const p of all) {
     const opt = document.createElement('option');
     opt.value = p.id;
-    opt.textContent = t(p.nameKey);
+    opt.textContent = p.label;
     sel.append(opt);
   }
   sel.value = cfg.persona;
@@ -135,6 +157,8 @@ export function initProChatHeader(onRefreshControl) {
     if (typeof onRefreshControl === 'function') onRefreshControl();
   });
 }
+
+let showPersonaCreator = false;
 
 export function renderProControlSection(onLicenseChanged) {
   const licCard = $('#pro-license-card');
@@ -208,13 +232,16 @@ export function renderProControlSection(onLicenseChanged) {
   }
 
   const cfg = getProSettings();
-  const activePersona = PERSONAS.find(p => p.id === cfg.persona) || PERSONAS[0];
+  const allPersonas = getAllPersonas(cfg);
+  const activePersona = allPersonas.find(p => p.id === cfg.persona) || allPersonas[0];
   studioCard.className = 'info-card pro-studio' + (isPro ? '' : ' locked');
 
-  const personaButtonsHtml = PERSONAS.map(p => {
-    const cls = 'persona-chip' + (p.id === cfg.persona ? ' active' : '');
-    return `<button type="button" class="${cls}" data-persona="${p.id}" ${isPro ? '' : 'disabled'}>${t(p.nameKey)}</button>`;
-  }).join('');
+  const personaButtonsHtml = allPersonas
+    .map(p => {
+      const cls = 'persona-chip' + (p.id === activePersona.id ? ' active' : '');
+      return `<button type="button" class="${cls}" data-persona="${p.id}" ${isPro ? '' : 'disabled'}>${p.label}</button>`;
+    })
+    .join('');
 
   studioCard.innerHTML = `
     <div class="row-between">
@@ -222,18 +249,39 @@ export function renderProControlSection(onLicenseChanged) {
         <div class="card-kicker">${t('proStudioKicker')}</div>
         <strong>${t('proPersonasTitle')}</strong>
       </div>
-      <span class="${isPro ? 'badge-ok' : 'badge-pro'}">${isPro ? t('profActive') : 'Guanaco Pro'}</span>
+      <button id="btn-toggle-new-persona" class="btn-ghost small" type="button" ${isPro ? '' : 'disabled'}>${t('proNewPersonaBtn')}</button>
     </div>
 
     <div class="persona-grid">${personaButtonsHtml}</div>
-    <div id="persona-desc" class="muted">${t(activePersona.descKey)}</div>
+
+    <div class="row-between">
+      <div id="persona-desc" class="muted">${activePersona.desc}</div>
+      ${
+        isPro && activePersona.isCustom
+          ? `<button id="btn-del-persona" class="btn-ghost small danger" type="button">${t('proDelPersonaBtn')}</button>`
+          : ''
+      }
+    </div>
+
+    <div id="new-persona-box" class="new-persona-box" ${showPersonaCreator && isPro ? '' : 'hidden'}>
+      <strong>${t('proCreatePersonaTitle')}</strong>
+      <input id="new-persona-name" class="gguf-text-input" type="text" placeholder="${t('proNewPersonaNamePh')}">
+      <textarea id="new-persona-prompt" rows="2" placeholder="${t('proNewPersonaPromptPh')}"></textarea>
+      <div class="row-between">
+        <span></span>
+        <div style="display:flex;gap:8px;">
+          <button id="btn-cancel-persona" class="btn-ghost small" type="button">${t('proCancelBtn')}</button>
+          <button id="btn-save-persona" class="btn-primary" type="button">${t('proSavePersonaBtn')}</button>
+        </div>
+      </div>
+    </div>
 
     <div class="pro-field">
       <div class="row-between">
         <label for="pro-system-prompt"><strong>${t('proSysPromptLabel')}</strong></label>
         <span class="muted">${t('proSysPromptHint')}</span>
       </div>
-      <textarea id="pro-system-prompt" rows="3" placeholder="${t('proSysPromptPlaceholder')}" ${isPro ? '' : 'disabled'}></textarea>
+      <textarea id="pro-system-prompt" rows="2" placeholder="${t('proSysPromptPlaceholder')}" ${isPro ? '' : 'disabled'}></textarea>
     </div>
 
     <div class="pro-params-head row-between">
@@ -313,6 +361,37 @@ export function renderProControlSection(onLicenseChanged) {
     });
   });
 
+  studioCard.querySelector('#btn-toggle-new-persona')?.addEventListener('click', () => {
+    showPersonaCreator = !showPersonaCreator;
+    renderProControlSection(onLicenseChanged);
+    if (showPersonaCreator) {
+      setTimeout(() => studioCard.querySelector('#new-persona-name')?.focus(), 50);
+    }
+  });
+
+  studioCard.querySelector('#btn-cancel-persona')?.addEventListener('click', () => {
+    showPersonaCreator = false;
+    renderProControlSection(onLicenseChanged);
+  });
+
+  studioCard.querySelector('#btn-save-persona')?.addEventListener('click', () => {
+    const name = (studioCard.querySelector('#new-persona-name')?.value || '').trim();
+    const prompt = (studioCard.querySelector('#new-persona-prompt')?.value || '').trim();
+    if (!name || !prompt) return;
+    const id = `custom_${Date.now()}`;
+    const list = [...(getProSettings().customPersonas || []), { id, name, prompt }];
+    showPersonaCreator = false;
+    saveProSettings({ customPersonas: list, persona: id });
+    renderProControlSection(onLicenseChanged);
+  });
+
+  studioCard.querySelector('#btn-del-persona')?.addEventListener('click', () => {
+    const cur = getProSettings();
+    const list = (cur.customPersonas || []).filter(p => p.id !== activePersona.id);
+    saveProSettings({ customPersonas: list, persona: 'default' });
+    renderProControlSection(onLicenseChanged);
+  });
+
   promptEl?.addEventListener('input', () => {
     saveProSettings({ customPrompt: promptEl.value });
   });
@@ -352,22 +431,17 @@ export function renderProControlSection(onLicenseChanged) {
   });
 
   studioCard.querySelector('#btn-pro-reset')?.addEventListener('click', () => {
-    saveProSettings({ ...DEFAULT_PRO_SETTINGS });
+    const cur = getProSettings();
+    saveProSettings({ ...DEFAULT_PRO_SETTINGS, customPersonas: cur.customPersonas });
     renderProControlSection(onLicenseChanged);
   });
 }
-
-let ggufMode = 'file'; // 'file' | 'base'
 
 export function renderProModelsBuilder(onModelCreated) {
   const card = $('#pro-gguf-card');
   if (!card) return;
   const isPro = Boolean(state.license?.active);
   card.className = 'info-card pro-studio' + (isPro ? '' : ' locked');
-
-  const baseOptions = (state.installed || [])
-    .map(m => `<option value="${m.name}">${m.name}</option>`)
-    .join('');
 
   card.innerHTML = `
     <div class="row-between">
@@ -379,52 +453,21 @@ export function renderProModelsBuilder(onModelCreated) {
     </div>
     <p class="muted">${t('proGgufDesc')}</p>
 
-    <div class="persona-grid">
-      <button type="button" class="persona-chip ${ggufMode === 'file' ? 'active' : ''}" data-gmode="file" ${isPro ? '' : 'disabled'}>${t('proGgufModeFile')}</button>
-      <button type="button" class="persona-chip ${ggufMode === 'base' ? 'active' : ''}" data-gmode="base" ${isPro ? '' : 'disabled'}>${t('proGgufModeBase')}</button>
+    <div class="inline-form">
+      <input id="gguf-path-input" type="text" placeholder="${t('proGgufPathPlaceholder')}" ${isPro ? '' : 'disabled'}>
+      <button id="btn-pick-gguf" class="btn-ghost" type="button" ${isPro ? '' : 'disabled'}>${t('proGgufPickBtn')}</button>
     </div>
 
-    <div id="gguf-source-wrap">
-      ${
-        ggufMode === 'file'
-          ? `<div class="inline-form">
-               <input id="gguf-path-input" type="text" placeholder="${t('proGgufPathPlaceholder')}" ${isPro ? '' : 'disabled'}>
-               <button id="btn-pick-gguf" class="btn-ghost" type="button" ${isPro ? '' : 'disabled'}>${t('proGgufPickBtn')}</button>
-             </div>`
-          : `<div class="pro-field">
-               <select id="gguf-base-select" class="gguf-select" ${isPro ? '' : 'disabled'}>
-                 ${baseOptions || `<option value="">${t('noInstalledModels')}</option>`}
-               </select>
-             </div>`
-      }
-    </div>
-
-    <div class="pro-params-grid">
-      <div class="pro-field">
-        <label for="gguf-name-input"><strong>${t('proGgufNameLabel')}</strong></label>
-        <input id="gguf-name-input" class="gguf-text-input" type="text" placeholder="${t('proGgufNamePlaceholder')}" ${isPro ? '' : 'disabled'}>
-      </div>
-      <div class="pro-field">
-        <label for="gguf-temp-input"><strong>${t('proTempLabel')}</strong></label>
-        <input id="gguf-temp-input" class="gguf-text-input" type="number" min="0" max="2" step="0.05" value="0.35" ${isPro ? '' : 'disabled'}>
-      </div>
-    </div>
-
-    <div class="pro-field">
-      <label for="gguf-sys-input"><strong>${t('proGgufSysLabel')}</strong></label>
-      <textarea id="gguf-sys-input" rows="2" placeholder="${t('proGgufSysPlaceholder')}" ${isPro ? '' : 'disabled'}></textarea>
-    </div>
-
-    <div id="gguf-status-msg" class="muted" hidden></div>
-
-    <div class="row-between">
-      <span></span>
+    <div class="inline-form">
+      <input id="gguf-name-input" type="text" placeholder="${t('proGgufNamePlaceholder')}" ${isPro ? '' : 'disabled'}>
       ${
         isPro
           ? `<button id="btn-create-gguf" class="btn-primary" type="button">${t('proGgufCreateBtn')}</button>`
           : `<button id="btn-unlock-gguf" class="btn-ghost small" type="button">${t('profLockedBtn')}</button>`
       }
     </div>
+
+    <div id="gguf-status-msg" class="muted" hidden></div>
   `;
 
   if (!isPro) {
@@ -437,13 +480,6 @@ export function renderProModelsBuilder(onModelCreated) {
     });
     return;
   }
-
-  card.querySelectorAll('[data-gmode]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      ggufMode = btn.dataset.gmode;
-      renderProModelsBuilder(onModelCreated);
-    });
-  });
 
   const pathInput = card.querySelector('#gguf-path-input');
   const nameInput = card.querySelector('#gguf-name-input');
@@ -476,12 +512,7 @@ export function renderProModelsBuilder(onModelCreated) {
   card.querySelector('#btn-create-gguf')?.addEventListener('click', async () => {
     const btn = card.querySelector('#btn-create-gguf');
     const name = (nameInput?.value || '').trim();
-    const fromSource =
-      ggufMode === 'file'
-        ? (pathInput?.value || '').trim()
-        : (card.querySelector('#gguf-base-select')?.value || '').trim();
-    const sysPrompt = (card.querySelector('#gguf-sys-input')?.value || '').trim();
-    const tempVal = Number(card.querySelector('#gguf-temp-input')?.value);
+    const fromSource = (pathInput?.value || '').trim();
 
     if (!fromSource || !name) {
       if (statusEl) {
@@ -501,9 +532,9 @@ export function renderProModelsBuilder(onModelCreated) {
         req: {
           name,
           fromSource,
-          isGgufFile: ggufMode === 'file',
-          systemPrompt: sysPrompt || null,
-          temperature: Number.isFinite(tempVal) ? tempVal : 0.35,
+          isGgufFile: true,
+          systemPrompt: null,
+          temperature: null,
           numCtx: null,
         },
       });
