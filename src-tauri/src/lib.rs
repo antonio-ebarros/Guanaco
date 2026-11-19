@@ -27,6 +27,8 @@ pub fn run() {
             ollama::pull_model,
             ollama::cancel_chat,
             ollama::chat_stream,
+            ollama::pick_gguf_file,
+            ollama::create_custom_model,
             storage::load_conversations,
             storage::save_conversations,
             tts::get_tts_status,

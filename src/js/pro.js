@@ -1,4 +1,4 @@
-import { $, invoke, state } from './state.js';
+import { $, invoke, state, switchView } from './state.js';
 import { renderProfilePill } from './theme.js';
 import { t } from './i18n.js';
 
@@ -354,5 +354,171 @@ export function renderProControlSection(onLicenseChanged) {
   studioCard.querySelector('#btn-pro-reset')?.addEventListener('click', () => {
     saveProSettings({ ...DEFAULT_PRO_SETTINGS });
     renderProControlSection(onLicenseChanged);
+  });
+}
+
+let ggufMode = 'file'; // 'file' | 'base'
+
+export function renderProModelsBuilder(onModelCreated) {
+  const card = $('#pro-gguf-card');
+  if (!card) return;
+  const isPro = Boolean(state.license?.active);
+  card.className = 'info-card pro-studio' + (isPro ? '' : ' locked');
+
+  const baseOptions = (state.installed || [])
+    .map(m => `<option value="${m.name}">${m.name}</option>`)
+    .join('');
+
+  card.innerHTML = `
+    <div class="row-between">
+      <div>
+        <div class="card-kicker">${t('proGgufKicker')}</div>
+        <strong>${t('proGgufTitle')}</strong>
+      </div>
+      <span class="${isPro ? 'badge-ok' : 'badge-pro-gold'}">✨ Guanaco Pro</span>
+    </div>
+    <p class="muted">${t('proGgufDesc')}</p>
+
+    <div class="persona-grid">
+      <button type="button" class="persona-chip ${ggufMode === 'file' ? 'active' : ''}" data-gmode="file" ${isPro ? '' : 'disabled'}>${t('proGgufModeFile')}</button>
+      <button type="button" class="persona-chip ${ggufMode === 'base' ? 'active' : ''}" data-gmode="base" ${isPro ? '' : 'disabled'}>${t('proGgufModeBase')}</button>
+    </div>
+
+    <div id="gguf-source-wrap">
+      ${
+        ggufMode === 'file'
+          ? `<div class="inline-form">
+               <input id="gguf-path-input" type="text" placeholder="${t('proGgufPathPlaceholder')}" ${isPro ? '' : 'disabled'}>
+               <button id="btn-pick-gguf" class="btn-ghost" type="button" ${isPro ? '' : 'disabled'}>${t('proGgufPickBtn')}</button>
+             </div>`
+          : `<div class="pro-field">
+               <select id="gguf-base-select" class="gguf-select" ${isPro ? '' : 'disabled'}>
+                 ${baseOptions || `<option value="">${t('noInstalledModels')}</option>`}
+               </select>
+             </div>`
+      }
+    </div>
+
+    <div class="pro-params-grid">
+      <div class="pro-field">
+        <label for="gguf-name-input"><strong>${t('proGgufNameLabel')}</strong></label>
+        <input id="gguf-name-input" class="gguf-text-input" type="text" placeholder="${t('proGgufNamePlaceholder')}" ${isPro ? '' : 'disabled'}>
+      </div>
+      <div class="pro-field">
+        <label for="gguf-temp-input"><strong>${t('proTempLabel')}</strong></label>
+        <input id="gguf-temp-input" class="gguf-text-input" type="number" min="0" max="2" step="0.05" value="0.35" ${isPro ? '' : 'disabled'}>
+      </div>
+    </div>
+
+    <div class="pro-field">
+      <label for="gguf-sys-input"><strong>${t('proGgufSysLabel')}</strong></label>
+      <textarea id="gguf-sys-input" rows="2" placeholder="${t('proGgufSysPlaceholder')}" ${isPro ? '' : 'disabled'}></textarea>
+    </div>
+
+    <div id="gguf-status-msg" class="muted" hidden></div>
+
+    <div class="row-between">
+      <span></span>
+      ${
+        isPro
+          ? `<button id="btn-create-gguf" class="btn-primary" type="button">${t('proGgufCreateBtn')}</button>`
+          : `<button id="btn-unlock-gguf" class="btn-ghost small" type="button">${t('profLockedBtn')}</button>`
+      }
+    </div>
+  `;
+
+  if (!isPro) {
+    card.querySelector('#btn-unlock-gguf')?.addEventListener('click', () => {
+      switchView('control');
+      setTimeout(() => {
+        $('#pro-license-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        $('#pro-key-input')?.focus();
+      }, 150);
+    });
+    return;
+  }
+
+  card.querySelectorAll('[data-gmode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      ggufMode = btn.dataset.gmode;
+      renderProModelsBuilder(onModelCreated);
+    });
+  });
+
+  const pathInput = card.querySelector('#gguf-path-input');
+  const nameInput = card.querySelector('#gguf-name-input');
+  const statusEl = card.querySelector('#gguf-status-msg');
+
+  card.querySelector('#btn-pick-gguf')?.addEventListener('click', async () => {
+    try {
+      const picked = await invoke('pick_gguf_file');
+      if (picked && pathInput) {
+        pathInput.value = picked;
+        if (nameInput && !nameInput.value.trim()) {
+          const base = picked.split(/[\\/]/).pop() || '';
+          const slug = base
+            .replace(/\.gguf$/i, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9._-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 36);
+          if (slug) nameInput.value = slug;
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = `${t('errPrefix')}: ${err}`;
+      }
+    }
+  });
+
+  card.querySelector('#btn-create-gguf')?.addEventListener('click', async () => {
+    const btn = card.querySelector('#btn-create-gguf');
+    const name = (nameInput?.value || '').trim();
+    const fromSource =
+      ggufMode === 'file'
+        ? (pathInput?.value || '').trim()
+        : (card.querySelector('#gguf-base-select')?.value || '').trim();
+    const sysPrompt = (card.querySelector('#gguf-sys-input')?.value || '').trim();
+    const tempVal = Number(card.querySelector('#gguf-temp-input')?.value);
+
+    if (!fromSource || !name) {
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = t('proGgufMissingFields');
+      }
+      return;
+    }
+
+    if (btn) btn.disabled = true;
+    if (statusEl) {
+      statusEl.hidden = false;
+      statusEl.textContent = t('proGgufCreatingStatus');
+    }
+    try {
+      const created = await invoke('create_custom_model', {
+        req: {
+          name,
+          fromSource,
+          isGgufFile: ggufMode === 'file',
+          systemPrompt: sysPrompt || null,
+          temperature: Number.isFinite(tempVal) ? tempVal : 0.35,
+          numCtx: null,
+        },
+      });
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = t('proGgufSuccessMsg', { name: created });
+      }
+      if (typeof onModelCreated === 'function') await onModelCreated(created);
+    } catch (err) {
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = `${t('errPrefix')}: ${err}`;
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
 }

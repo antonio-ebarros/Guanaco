@@ -1,7 +1,7 @@
 import { $, PRESETS, fmtGb, invoke, state, switchView } from './state.js';
 import { getLang, t } from './i18n.js';
 import { getResponseProfile, setResponseProfile } from './theme.js';
-import { renderProControlSection } from './pro.js';
+import { renderProControlSection, renderProModelsBuilder } from './pro.js';
 
 let onRenderChat = () => {};
 
@@ -218,6 +218,11 @@ export function renderModelsView() {
       list.append(row);
     }
   }
+  renderProModelsBuilder(async newName => {
+    await refreshModels();
+    if (newName) $('#model-select').value = newName;
+    if (!state.busy) onRenderChat();
+  });
 }
 
 export async function pullModel(name) {
@@ -284,7 +289,10 @@ export function renderProfileGrid() {
 
 export function renderControlView() {
   renderProfileGrid();
-  renderProControlSection(() => renderControlView());
+  renderProControlSection(() => {
+    renderControlView();
+    renderModelsView();
+  });
   const s = state.sysInfo;
   if (!s) return;
   $('#ctrl-hw').textContent = t('ctrlHwSummary', { free: s.freeRamGb, total: s.totalRamGb });

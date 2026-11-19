@@ -5,7 +5,8 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::engine::{
-    AiEngine, BoxFuture, ChatEvent, ChatRequest, EngineInstallProgress, PullProgress,
+    AiEngine, BoxFuture, ChatEvent, ChatRequest, CreateModelRequest, EngineInstallProgress,
+    PullProgress,
 };
 
 pub const OLLAMA_URL: &str = "http://127.0.0.1:11434";
@@ -718,6 +719,168 @@ pub async fn chat_stream(
     req: ChatRequest,
 ) -> Result<(), String> {
     crate::engine::active_engine().chat_stream(&app, &state, req).await
+}
+
+#[tauri::command]
+pub async fn pick_gguf_file() -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(|| -> Result<Option<String>, String> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Ok(out) = Command::new("zenity")
+                .args([
+                    "--file-selection",
+                    "--title=Escolher modelo GGUF (.gguf)",
+                    "--file-filter=Modelos GGUF (*.gguf) | *.gguf *.GGUF",
+                    "--file-filter=Todos os arquivos | *",
+                ])
+                .output()
+            {
+                if out.status.success() {
+                    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !s.is_empty() {
+                        return Ok(Some(s));
+                    }
+                }
+                return Ok(None);
+            }
+            if let Ok(out) = Command::new("kdialog")
+                .args(["--getopenfilename", ".", "*.gguf|Modelos GGUF (*.gguf)"])
+                .output()
+            {
+                if out.status.success() {
+                    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !s.is_empty() {
+                        return Ok(Some(s));
+                    }
+                }
+                return Ok(None);
+            }
+            Err("Nenhum seletor gráfico (zenity/kdialog) encontrado. Digite ou cole o caminho do arquivo .gguf no campo.".to_string())
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            let script = "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Modelos GGUF (*.gguf)|*.gguf|Todos (*.*)|*.*'; if ($f.ShowDialog() -eq 'OK') { [Console]::Out.Write($f.FileName) }";
+            let out = Command::new("powershell")
+                .args(["-NoProfile", "-Sta", "-Command", script])
+                .creation_flags(0x08000000)
+                .output()
+                .map_err(|e| e.to_string())?;
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if s.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(s))
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn expand_home_path(raw: &str) -> PathBuf {
+    let trimmed = raw.trim();
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    PathBuf::from(trimmed)
+}
+
+#[tauri::command]
+pub async fn create_custom_model(
+    app: AppHandle,
+    req: CreateModelRequest,
+) -> Result<String, String> {
+    if !crate::license::is_pro_active(&app) {
+        return Err("Recurso exclusivo do Guanaco Pro. Ative sua licença na aba Controle.".to_string());
+    }
+
+    let clean_name = req.name.trim().to_lowercase();
+    if clean_name.is_empty()
+        || !clean_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+    {
+        return Err("Nome inválido. Use apenas letras, números, hífen (-), sublinhado (_) ou dois-pontos (:).".to_string());
+    }
+
+    let from_target = if req.is_gguf_file {
+        let p = expand_home_path(&req.from_source);
+        if !p.is_file() {
+            return Err(format!("Arquivo .gguf não encontrado em: {}", p.display()));
+        }
+        let abs = std::fs::canonicalize(&p).unwrap_or(p);
+        format!("\"{}\"", abs.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        let base = req.from_source.trim();
+        if base.is_empty() {
+            return Err("Informe o modelo base ou o arquivo .gguf.".to_string());
+        }
+        base.to_string()
+    };
+
+    let mut modelfile = format!("FROM {from_target}\n");
+    if let Some(temp) = req.temperature {
+        modelfile.push_str(&format!("PARAMETER temperature {:.2}\n", temp.clamp(0.0, 2.0)));
+    }
+    if let Some(ctx) = req.num_ctx {
+        modelfile.push_str(&format!("PARAMETER num_ctx {}\n", ctx.clamp(512, 131072)));
+    }
+    if let Some(sys) = req.system_prompt.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let safe_sys = sys.replace("\"\"\"", "\"\"");
+        modelfile.push_str(&format!("SYSTEM \"\"\"\n{safe_sys}\n\"\"\"\n"));
+    }
+
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    let mf_path = data_dir.join(format!("Modelfile-{}.tmp", std::process::id()));
+    std::fs::write(&mf_path, &modelfile).map_err(|e| e.to_string())?;
+
+    let bin = find_ollama_binary(&app).ok_or("Motor Ollama não encontrado.")?;
+    let eng_opt = engine_dir(&app);
+    let model_out = clean_name.clone();
+
+    let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let mut cmd = Command::new(&bin);
+        cmd.args(["create", &clean_name, "-f"])
+            .arg(&mf_path);
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Some(eng) = eng_opt {
+                let lib_dir = eng.join("lib").join("ollama");
+                if lib_dir.is_dir() {
+                    let prev = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                    let joined = if prev.is_empty() {
+                        lib_dir.to_string_lossy().to_string()
+                    } else {
+                        format!("{}:{prev}", lib_dir.to_string_lossy())
+                    };
+                    cmd.env("LD_LIBRARY_PATH", joined);
+                }
+            }
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        let out = cmd.output().map_err(|e| format!("Falha ao executar ollama create: {e}"))?;
+        let _ = std::fs::remove_file(&mf_path);
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() { stderr } else { stdout };
+            return Err(format!("Falha ao importar/criar modelo: {detail}"));
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    result?;
+    Ok(model_out)
 }
 
 pub fn cleanup_on_exit(app: &AppHandle) {

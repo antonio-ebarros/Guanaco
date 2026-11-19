@@ -71,6 +71,20 @@ pub struct EngineInstallProgress {
     pub error: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateModelRequest {
+    pub name: String,
+    pub from_source: String,
+    pub is_gguf_file: bool,
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub num_ctx: Option<u32>,
+}
+
 /// Interface comum para motores locais de IA (Ollama, llamafile, llama.cpp, etc.).
 pub trait AiEngine: Sync {
     #[allow(dead_code)]
