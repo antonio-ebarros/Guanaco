@@ -67,11 +67,14 @@ listen('chat-event', ev => {
   if (error) last.content += `\n\nErro: ${error}`;
   else if (delta) last.content += delta;
 
+  if (String(last.content || '').trim()) {
+    stopThinkingTimer();
+  }
+
   if (convId === state.activeConvId && state.activeStreamBubble) {
     state.activeStreamBubble.dataset.rawText = last.content;
     const body = state.activeStreamBubble.querySelector('.msg-body');
     if (String(last.content || '').trim()) {
-      stopThinkingTimer();
       if (typeof window.renderMarkdown === 'function') body.innerHTML = window.renderMarkdown(last.content);
       else body.textContent = last.content;
     }

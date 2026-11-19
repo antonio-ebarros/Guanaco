@@ -21,6 +21,9 @@ export const state = {
   activeConvId: null,
   attachments: [],
   busy: false,
+  streamingConvId: null,
+  thinkingLabel: null,
+  thinkingStartedAt: 0,
   activeStreamBubble: null,
   streamCancelled: false,
 };

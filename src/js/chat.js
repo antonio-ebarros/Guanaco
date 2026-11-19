@@ -88,13 +88,14 @@ export function stopThinkingTimer() {
 
 function startThinkingTimer(label = 'Pensando') {
   stopThinkingTimer();
-  const startedAt = Date.now();
+  state.thinkingLabel = label;
+  state.thinkingStartedAt = Date.now();
   thinkingTimer = setInterval(() => {
-    if (!state.activeStreamBubble) return;
-    const sec = Math.floor((Date.now() - startedAt) / 1000);
+    if (!state.activeStreamBubble || state.activeConvId !== state.streamingConvId) return;
+    const sec = Math.floor((Date.now() - state.thinkingStartedAt) / 1000);
     const body = state.activeStreamBubble.querySelector('.msg-body');
     if (body && body.querySelector('.thinking-indicator')) {
-      body.innerHTML = renderThinkingHtml(label, sec);
+      body.innerHTML = renderThinkingHtml(state.thinkingLabel || label, sec);
     }
   }, 1000);
 }
@@ -218,9 +219,35 @@ export function renderChat() {
     return;
   }
 
-  for (const m of conv.messages) {
-    appendBubble(m.role, m.displayContent ?? m.content, m.previews || m.images || [], m.fileNames || []);
-  }
+  state.activeStreamBubble = null;
+  conv.messages.forEach((m, idx) => {
+    const isStreamingThis =
+      state.busy &&
+      state.streamingConvId === conv.id &&
+      idx === conv.messages.length - 1 &&
+      m.role === 'assistant';
+    const isThinking = isStreamingThis && !String(m.content || '').trim();
+    const lbl = isThinking ? (state.thinkingLabel || t('thinking')) : null;
+    const bubble = appendBubble(
+      m.role,
+      m.displayContent ?? m.content,
+      m.previews || m.images || [],
+      m.fileNames || [],
+      lbl
+    );
+    if (m.cancelled) {
+      const body = bubble.querySelector('.msg-body');
+      if (body) body.innerHTML = `<em class="muted">${m.content || t('cancelledMsg')}</em>`;
+    }
+    if (isStreamingThis) {
+      state.activeStreamBubble = bubble;
+      if (isThinking && state.thinkingStartedAt > 0) {
+        const sec = Math.floor((Date.now() - state.thinkingStartedAt) / 1000);
+        const body = bubble.querySelector('.msg-body');
+        if (body) body.innerHTML = renderThinkingHtml(lbl, sec);
+      }
+    }
+  });
   log.scrollTop = log.scrollHeight;
 }
 
@@ -549,14 +576,14 @@ export function initChatEvents() {
     stopThinkingTimer();
     try {
       await invoke('cancel_chat');
-      const conv = activeConv();
+      const conv = state.conversations.find(c => c.id === state.streamingConvId) || activeConv();
       const last = conv?.messages?.[conv.messages.length - 1];
       if (last && last.role === 'assistant') {
         if (!String(last.content || '').trim()) {
           last.cancelled = true;
           last.content = t('cancelledMsg');
         }
-        if (state.activeStreamBubble) {
+        if (state.activeStreamBubble && state.activeConvId === conv.id) {
           state.activeStreamBubble.dataset.rawText = last.content;
           const body = state.activeStreamBubble.querySelector('.msg-body');
           if (last.cancelled) body.innerHTML = `<em class="muted">${t('cancelledMsg')}</em>`;
@@ -615,6 +642,7 @@ export function initChatEvents() {
 
     const thinkingLabel = imgs.length ? t('analyzingImg') : (fileNames.length ? t('readingDoc') : t('thinking'));
     conv.messages.push({ role: 'assistant', content: '' });
+    state.streamingConvId = conv.id;
     state.activeStreamBubble = appendBubble('assistant', '', [], [], thinkingLabel);
     $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
 
@@ -650,17 +678,22 @@ export function initChatEvents() {
     } catch (err) {
       if (!state.streamCancelled) {
         conv.messages[conv.messages.length - 1].content = `Erro: ${err}`;
-        state.activeStreamBubble.dataset.rawText = `Erro: ${err}`;
-        state.activeStreamBubble.querySelector('.msg-body').textContent = `Erro: ${err}`;
+        if (state.activeStreamBubble && state.activeConvId === conv.id) {
+          state.activeStreamBubble.dataset.rawText = `Erro: ${err}`;
+          state.activeStreamBubble.querySelector('.msg-body').textContent = `Erro: ${err}`;
+        }
       }
     } finally {
       stopThinkingTimer();
       setGenerating(false);
+      state.streamingConvId = null;
+      state.thinkingLabel = null;
+      state.thinkingStartedAt = 0;
       const last = conv.messages[conv.messages.length - 1];
       if (last && last.role === 'assistant' && !String(last.content || '').trim()) {
         last.cancelled = state.streamCancelled;
         last.content = state.streamCancelled ? t('cancelledMsg') : t('noReplyMsg');
-        if (state.activeStreamBubble) {
+        if (state.activeStreamBubble && state.activeConvId === conv.id) {
           state.activeStreamBubble.dataset.rawText = last.content;
           state.activeStreamBubble.querySelector('.msg-body').innerHTML = `<em class="muted">${last.content}</em>`;
         }
