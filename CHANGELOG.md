@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0] - 2026-11-20
+- **Guanaco Pro Integrado (Pagamento único, 100% offline)**:
+  - Validação criptográfica assimétrica **Ed25519** em Rust (`src-tauri/src/license.rs`) + gerador de chaves (`tools/guanaco-keygen.mjs`).
+  - Desbloqueio do **Perfil Livre (`🔓 Livre`)** na aba Controle e no cabeçalho do chat.
+  - **Estúdio Pro — Personalidades & Contexto Global** (`src/js/pro.js`): 5 personalidades prontas (*Padrão*, *Programador Sênior*, *Escritor & Editor*, *Professor Didático*, *Analista Estrategista*) + **Criador de Personalidades Salvas** com seletor rápido no topo do chat.
+  - **Parâmetros Avançados de Inferência**: `temperature`, `top_p`, `repeat_penalty`, `num_ctx` (`2048` a `32768`) e `num_gpu` (*Automático*, *16 camadas*, *28 camadas*, *100% GPU* e *Somente CPU*) com **auto-fallback inteligente de VRAM** (`src-tauri/src/ollama.rs`).
+  - **Importador de modelos `.GGUF` locais** na aba Modelos (`pick_gguf_file` e `create_custom_model`).
+  - **Ferramentas e Extensões Locais 100% Offline** (`src-tauri/src/tools.rs`): **Pasta de Conhecimento Local (RAG Offline)** para consultar arquivos/notas do computador e **Calculadora Exata + Contexto de Data/Hora e Sistema**.
+  - **Suporte Multi-Motor (`Ollama` + `Mozilla llamafile / llama.cpp`)** (`src-tauri/src/llamafile.rs` e `src-tauri/src/engine.rs`).
+- **Padronização de Autoria & Modal Sobre**:
+  - Autor padronizado como **Antonio E. Barros** (`LICENSE`, `Cargo.toml`, `package.json`, `README.md`) e modal **Sobre o Guanaco** com estética *frosted glass* estilo *MarkNota*.
+- **Correções da Auditoria & Estabilidade**:
+  - Reconexão automática da bolha de streaming e do contador `"Pensando… Xs"` ao alternar entre conversas durante a geração (`src/js/chat.js`).
+  - Renderizador Markdown completo (`window.renderMarkdown`) com botão *Copiar* em blocos de código, desduplicação de imagens em `conversations.json`, nomes WAV atômicos no Piper TTS e detecção de GPUs AMD/Intel via sysfs/DRM no Linux.
+
 ## [0.3.2] - 2026-11-17
 - Perfis de Resposta (**🛡️ Conservador** padrão com alerta a riscos físicos, **⚖️ Equilibrado**, e **🔓 Livre** bloqueado com selo *Guanaco Pro*) na aba Controle e pílula de atalho no cabeçalho do chat (nos 3 idiomas).
 

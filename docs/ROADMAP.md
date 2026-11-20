@@ -30,12 +30,18 @@ Objetivo: dividir responsabilidades antes que `lib.rs` e `app.js` fiquem grandes
 
 ---
 
-## Fase 3 — Ecossistema Guanaco (Open Core)
-Base aberta sob licença **Apache-2.0** (`Guanaco`), com espaço limpo para extensões comerciais em repositórios separados:
+## Fase 3 — Ecossistema Guanaco & Guanaco Pro (Concluída em v0.4.0)
+Repositório unificado sob licença **Apache-2.0** (`Guanaco`), com ativação vitalícia 100% offline via assinatura criptográfica **Ed25519**:
 
-1. **🦙 Guanaco (Gratuito e Aberto — este repositório)**
-   - Chat local, gerenciamento de modelos, detecção de hardware, controle de memória e privacidade 100% offline.
-2. **🦙 Guanaco Pro (Comercial)**
-   - Perfis avançados de IA, múltiplos mecanismos locais, ferramentas de produtividade e personalização avançada.
-3. **🦙 Guanaco Agent (Comercial / Módulo independente)**
-   - Execução assistida de tarefas com aprovação explícita do usuário (arquivos autorizados, comandos aprovados, automações e agentes especializados).
+1. **🦙 Guanaco (Gratuito e Aberto)**
+   - [x] Chat local, gerenciamento de modelos, detecção de hardware (NVIDIA, AMD e Intel), controle de memória, Piper TTS neural offline, 3 idiomas (`PT`, `EN`, `中文`) e Perfis **Conservador** e **Equilibrado**.
+2. **✨ Guanaco Pro (Pagamento único, vitalício e 100% offline)**
+   - [x] Validação de licença offline com chave pública `Ed25519` (`src-tauri/src/license.rs`).
+   - [x] Desbloqueio do **Perfil Livre (`🔓 Livre`)**.
+   - [x] **Personalidades** (5 modos prontos + criador de personalidades salvas pelo usuário) e **Contexto Global / System Prompt editável**.
+   - [x] **Parâmetros Avançados** (`temperature`, `top_p`, `repeat_penalty`, `num_ctx`, `num_gpu` com auto-fallback inteligente de VRAM).
+   - [x] **Importador de modelos `.GGUF` locais** na aba Modelos.
+   - [x] **Ferramentas e Extensões Locais** (`src-tauri/src/tools.rs`): Pasta de Conhecimento Local (RAG Offline) e Calculadora Exata + Contexto de Tempo/Sistema.
+   - [x] **Suporte Multi-Motor (`AiEngine`)**: alternância entre **Ollama (`127.0.0.1:11434`)** e **Mozilla `llamafile` / `llama.cpp` (`127.0.0.1:8081`)**.
+3. **🤖 Guanaco Agent (Próxima Fronteira / Futuro)**
+   - [ ] Execução assistida de tarefas com aprovação explícita do usuário (automações e agentes especializados).

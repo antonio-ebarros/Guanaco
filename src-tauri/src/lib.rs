@@ -1,8 +1,10 @@
 mod engine;
 mod hardware;
 mod license;
+mod llamafile;
 mod ollama;
 mod storage;
+mod tools;
 mod tts;
 
 use tauri::{Manager, WindowEvent};
@@ -36,7 +38,12 @@ pub fn run() {
             tts::synthesize_piper,
             license::get_license_status,
             license::activate_license,
-            license::deactivate_license
+            license::deactivate_license,
+            tools::pick_knowledge_folder,
+            tools::scan_knowledge_folder,
+            llamafile::get_engine_config,
+            llamafile::set_engine_config,
+            llamafile::pick_llamafile
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Guanaco");

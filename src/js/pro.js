@@ -50,6 +50,11 @@ export const DEFAULT_PRO_SETTINGS = {
   numCtx: 4096,
   repeatPenalty: 1.1,
   numGpu: -1,
+  enableSmartTools: true,
+  enableKnowledgeFolder: false,
+  knowledgeFolder: '',
+  engine: 'ollama',
+  llamafilePath: '',
 };
 
 export function getProSettings() {
@@ -70,6 +75,11 @@ export function getProSettings() {
       numCtx: Number.isFinite(Number(parsed.numCtx)) ? Number(parsed.numCtx) : 4096,
       repeatPenalty: Number.isFinite(Number(parsed.repeatPenalty)) ? Number(parsed.repeatPenalty) : 1.1,
       numGpu: Number.isFinite(Number(parsed.numGpu)) ? Number(parsed.numGpu) : -1,
+      enableSmartTools: parsed.enableSmartTools !== undefined ? Boolean(parsed.enableSmartTools) : true,
+      enableKnowledgeFolder: Boolean(parsed.enableKnowledgeFolder),
+      knowledgeFolder: typeof parsed.knowledgeFolder === 'string' ? parsed.knowledgeFolder : '',
+      engine: parsed.engine === 'llamafile' ? 'llamafile' : 'ollama',
+      llamafilePath: typeof parsed.llamafilePath === 'string' ? parsed.llamafilePath : '',
     };
   } catch {
     return { ...DEFAULT_PRO_SETTINGS };
@@ -434,6 +444,178 @@ export function renderProControlSection(onLicenseChanged) {
     const cur = getProSettings();
     saveProSettings({ ...DEFAULT_PRO_SETTINGS, customPersonas: cur.customPersonas });
     renderProControlSection(onLicenseChanged);
+  });
+
+  renderProToolsAndEngineCard(onLicenseChanged);
+}
+
+async function renderProToolsAndEngineCard(onLicenseChanged) {
+  const card = $('#pro-tools-card');
+  if (!card) return;
+  const isPro = Boolean(state.license?.active);
+  const cfg = getProSettings();
+  card.className = 'info-card pro-studio' + (isPro ? '' : ' locked');
+
+  card.innerHTML = `
+    <div class="row-between">
+      <div>
+        <div class="card-kicker">${t('proToolsKicker')}</div>
+        <strong>${t('proToolsTitle')}</strong>
+      </div>
+      <span class="${isPro ? 'badge-ok' : 'badge-pro'}">${isPro ? t('profActive') : 'Guanaco Pro'}</span>
+    </div>
+
+    <div class="pro-tool-box">
+      <label class="pro-check-row">
+        <input id="pro-smart-tools-chk" type="checkbox" ${cfg.enableSmartTools ? 'checked' : ''} ${isPro ? '' : 'disabled'}>
+        <div>
+          <strong>${t('proSmartToolsName')}</strong>
+          <div class="muted">${t('proSmartToolsDesc')}</div>
+        </div>
+      </label>
+    </div>
+
+    <div class="pro-tool-box">
+      <label class="pro-check-row">
+        <input id="pro-rag-chk" type="checkbox" ${cfg.enableKnowledgeFolder ? 'checked' : ''} ${isPro ? '' : 'disabled'}>
+        <div>
+          <strong>${t('proRagName')}</strong>
+          <div class="muted">${t('proRagDesc')}</div>
+        </div>
+      </label>
+      <div class="inline-form" style="margin-top:8px;">
+        <input id="pro-rag-folder" type="text" placeholder="${t('proRagFolderPh')}" value="${cfg.knowledgeFolder || ''}" ${isPro ? '' : 'disabled'}>
+        <button id="btn-pick-rag-folder" class="btn-ghost" type="button" ${isPro ? '' : 'disabled'}>${t('proRagPickBtn')}</button>
+      </div>
+      <div id="pro-rag-stats" class="muted" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="pro-params-head row-between">
+      <div>
+        <div class="card-kicker">${t('proEngineKicker')}</div>
+        <strong>${t('proEngineTitle')}</strong>
+      </div>
+    </div>
+    <p class="muted" style="margin:0;">${t('proEngineDesc')}</p>
+
+    <div class="persona-grid">
+      <button type="button" class="persona-chip ${cfg.engine === 'ollama' ? 'active' : ''}" data-eng="ollama" ${isPro ? '' : 'disabled'}>${t('proEngineOllama')}</button>
+      <button type="button" class="persona-chip ${cfg.engine === 'llamafile' ? 'active' : ''}" data-eng="llamafile" ${isPro ? '' : 'disabled'}>${t('proEngineLlamafile')}</button>
+    </div>
+
+    <div id="pro-llamafile-box" ${cfg.engine === 'llamafile' ? '' : 'hidden'}>
+      <div class="inline-form">
+        <input id="pro-llamafile-path" type="text" placeholder="${t('proLlamafilePh')}" value="${cfg.llamafilePath || ''}" ${isPro ? '' : 'disabled'}>
+        <button id="btn-pick-llamafile" class="btn-ghost" type="button" ${isPro ? '' : 'disabled'}>${t('proLlamafilePickBtn')}</button>
+        <button id="btn-apply-llamafile" class="btn-primary" type="button" ${isPro ? '' : 'disabled'}>${t('proLlamafileApplyBtn')}</button>
+      </div>
+      <div id="pro-engine-msg" class="muted" style="margin-top:6px;" hidden></div>
+    </div>
+  `;
+
+  const updateRagStats = async folder => {
+    const statsEl = card.querySelector('#pro-rag-stats');
+    if (!statsEl) return;
+    if (!folder || !folder.trim()) {
+      statsEl.textContent = '';
+      return;
+    }
+    try {
+      const st = await invoke('scan_knowledge_folder', { folder: folder.trim() });
+      if (!st.exists) {
+        statsEl.textContent = t('proRagNotFound');
+      } else {
+        const kb = (st.totalBytes / 1024).toFixed(1);
+        statsEl.textContent = t('proRagStatsOk', { count: st.fileCount, kb });
+      }
+    } catch {
+      statsEl.textContent = '';
+    }
+  };
+
+  if (cfg.knowledgeFolder) {
+    updateRagStats(cfg.knowledgeFolder);
+  }
+
+  if (!isPro) return;
+
+  const smartChk = card.querySelector('#pro-smart-tools-chk');
+  smartChk?.addEventListener('change', () => {
+    saveProSettings({ enableSmartTools: smartChk.checked });
+  });
+
+  const ragChk = card.querySelector('#pro-rag-chk');
+  ragChk?.addEventListener('change', () => {
+    saveProSettings({ enableKnowledgeFolder: ragChk.checked });
+  });
+
+  const ragInput = card.querySelector('#pro-rag-folder');
+  ragInput?.addEventListener('change', () => {
+    saveProSettings({ knowledgeFolder: ragInput.value.trim() });
+    updateRagStats(ragInput.value.trim());
+  });
+
+  card.querySelector('#btn-pick-rag-folder')?.addEventListener('click', async () => {
+    try {
+      const picked = await invoke('pick_knowledge_folder');
+      if (picked && ragInput) {
+        ragInput.value = picked;
+        if (ragChk) ragChk.checked = true;
+        saveProSettings({ knowledgeFolder: picked, enableKnowledgeFolder: true });
+        updateRagStats(picked);
+      }
+    } catch {}
+  });
+
+  card.querySelectorAll('[data-eng]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const eng = btn.dataset.eng;
+      saveProSettings({ engine: eng });
+      if (eng === 'ollama') {
+        try {
+          await invoke('set_engine_config', { engine: 'ollama', llamafilePath: cfg.llamafilePath || '' });
+          if (typeof onLicenseChanged === 'function') onLicenseChanged();
+        } catch {}
+      } else {
+        renderProToolsAndEngineCard(onLicenseChanged);
+      }
+    });
+  });
+
+  const lfInput = card.querySelector('#pro-llamafile-path');
+  const engMsg = card.querySelector('#pro-engine-msg');
+
+  card.querySelector('#btn-pick-llamafile')?.addEventListener('click', async () => {
+    try {
+      const picked = await invoke('pick_llamafile');
+      if (picked && lfInput) {
+        lfInput.value = picked;
+        saveProSettings({ llamafilePath: picked });
+      }
+    } catch {}
+  });
+
+  card.querySelector('#btn-apply-llamafile')?.addEventListener('click', async () => {
+    const pathVal = (lfInput?.value || '').trim();
+    saveProSettings({ engine: 'llamafile', llamafilePath: pathVal });
+    if (engMsg) {
+      engMsg.hidden = false;
+      engMsg.textContent = t('startingEngine');
+    }
+    try {
+      await invoke('set_engine_config', { engine: 'llamafile', llamafilePath: pathVal });
+      await invoke('start_ollama');
+      if (engMsg) {
+        engMsg.hidden = false;
+        engMsg.textContent = t('proLlamafileReadyMsg');
+      }
+      if (typeof onLicenseChanged === 'function') onLicenseChanged();
+    } catch (err) {
+      if (engMsg) {
+        engMsg.hidden = false;
+        engMsg.textContent = `${t('errPrefix')}: ${err}`;
+      }
+    }
   });
 }
 

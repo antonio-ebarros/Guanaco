@@ -1,6 +1,6 @@
 [package]
 name = "guanaco"
-version = "0.3.2"
+version = "0.4.0"
 description = "Gerenciador de IA local com interface de conversa integrada"
 authors = ["Antonio E. Barros"]
 license = "Apache-2.0"

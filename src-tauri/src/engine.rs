@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Mutex;
 use tauri::AppHandle;
 
+use crate::llamafile::LlamafileEngine;
 use crate::ollama::{AppState, OllamaEngine};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -49,6 +52,10 @@ pub struct ChatRequest {
     pub repeat_penalty: Option<f64>,
     #[serde(default)]
     pub num_gpu: Option<i32>,
+    #[serde(default)]
+    pub enable_smart_tools: bool,
+    #[serde(default)]
+    pub knowledge_folder: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -108,7 +115,37 @@ pub trait AiEngine: Sync {
 }
 
 static OLLAMA: OllamaEngine = OllamaEngine;
+static LLAMAFILE: LlamafileEngine = LlamafileEngine;
+static ACTIVE_KIND: AtomicU8 = AtomicU8::new(0); // 0 = ollama, 1 = llamafile
+static LLAMAFILE_PATH: Mutex<String> = Mutex::new(String::new());
+
+pub fn set_active_engine_state(engine: &str, llamafile_path: &str) {
+    let kind = if engine == "llamafile" { 1 } else { 0 };
+    ACTIVE_KIND.store(kind, Ordering::Relaxed);
+    if let Ok(mut guard) = LLAMAFILE_PATH.lock() {
+        *guard = llamafile_path.to_string();
+    }
+}
+
+pub fn active_engine_kind() -> &'static str {
+    if ACTIVE_KIND.load(Ordering::Relaxed) == 1 {
+        "llamafile"
+    } else {
+        "ollama"
+    }
+}
+
+pub fn current_llamafile_path() -> String {
+    LLAMAFILE_PATH
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default()
+}
 
 pub fn active_engine() -> &'static dyn AiEngine {
-    &OLLAMA
+    if ACTIVE_KIND.load(Ordering::Relaxed) == 1 {
+        &LLAMAFILE
+    } else {
+        &OLLAMA
+    }
 }

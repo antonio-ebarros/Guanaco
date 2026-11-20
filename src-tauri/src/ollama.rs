@@ -17,6 +17,7 @@ pub struct OllamaEngine;
 pub struct AppState {
     pub chat_cancel: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
     pub ollama_child: Mutex<Option<Child>>,
+    pub llamafile_child: Mutex<Option<Child>>,
     pub active_model: Mutex<Option<String>>,
 }
 
@@ -25,6 +26,7 @@ impl Default for AppState {
         Self {
             chat_cancel: Mutex::new(None),
             ollama_child: Mutex::new(None),
+            llamafile_child: Mutex::new(None),
             active_model: Mutex::new(None),
         }
     }
@@ -539,12 +541,31 @@ pub async fn chat_stream_impl(
         } else {
             String::new()
         };
+        let last_user_query = req
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.as_str())
+            .unwrap_or("");
+        let tools_part = if pro_active {
+            crate::tools::build_tools_augmentation(
+                last_user_query,
+                req.enable_smart_tools,
+                req.knowledge_folder.as_deref(),
+            )
+            .map(|t| format!("\n\nDados verificados pelas Ferramentas Locais do Guanaco Pro:\n{t}"))
+            .unwrap_or_default()
+        } else {
+            String::new()
+        };
         let sys_content = format!(
-            "{}\n{}\nModelo ativo nesta conversa: {}.{}",
+            "{}\n{}\nModelo ativo nesta conversa: {}.{}{}",
             GUANACO_SYSTEM_PROMPT.trim(),
             profile_rule,
             req.model,
-            custom_part
+            custom_part,
+            tools_part
         );
         msgs.push(serde_json::json!({ "role": "system", "content": sys_content }));
     }
@@ -902,6 +923,7 @@ pub fn cleanup_on_exit(app: &AppHandle) {
             let _ = child.wait();
         }
     }
+    crate::llamafile::stop_llamafile_child(&state);
 
     let used_model = state.active_model.lock().ok().and_then(|mut g| g.take());
     if had_active_chat || used_model.is_some() {

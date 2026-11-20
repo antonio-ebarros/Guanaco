@@ -121,6 +121,7 @@ pub async fn get_system_info(app: AppHandle) -> SystemInfo {
     let os_reserved = round1((total_gb * 0.12).max(base_os_reserve).min(total_gb * 0.4));
     let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
 
+    let _ = crate::llamafile::load_saved_engine_config(&app);
     let engine = active_engine();
 
     SystemInfo {

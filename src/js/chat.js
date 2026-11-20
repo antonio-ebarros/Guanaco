@@ -672,6 +672,11 @@ export function initChatEvents() {
           numCtx: proActive ? proCfg.numCtx : null,
           repeatPenalty: proActive ? proCfg.repeatPenalty : null,
           numGpu: proActive ? proCfg.numGpu : null,
+          enableSmartTools: proActive ? Boolean(proCfg.enableSmartTools) : false,
+          knowledgeFolder:
+            proActive && proCfg.enableKnowledgeFolder && proCfg.knowledgeFolder
+              ? proCfg.knowledgeFolder
+              : null,
           messages: buildApiMessages(conv.messages),
         },
       });
