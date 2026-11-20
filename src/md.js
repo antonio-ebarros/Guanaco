@@ -17,7 +17,8 @@ window.md = (() => {
     while ((m = re.exec(code))) {
       out += esc(code.slice(last, m.index));
       const [c, s, n, p, w] = hash ? [m[1], m[2], m[3], null, m[4]] : [m[1], m[2], m[3], m[4], m[5]];
-      const cls = c ? 'c' : s ? 's' : n ? 'n' : p ? 'k' : w && KW.has(w) ? 'k' : '';
+      const nextCh = code[m.index + m[0].length];
+      const cls = c ? 'c' : s ? 's' : n ? 'n' : p ? 'k' : w && KW.has(w) ? 'k' : w && nextCh === '(' ? 'f' : '';
       out += cls ? `<span class="t-${cls}">${esc(m[0])}</span>` : esc(m[0]);
       last = re.lastIndex;
       if (m[0] === '') re.lastIndex++;
@@ -44,7 +45,8 @@ window.md = (() => {
   const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => inline(c.trim()));
 
   function codeBlock(code, lang) {
-    return `<div class="code"><div class="code-bar"><span>${esc(lang || 'código')}</span><button type="button" class="copy">Copiar</button></div><pre><code>${highlight(code, lang)}</code></pre></div>`;
+    const label = esc((lang || 'código').toUpperCase());
+    return `<div class="code"><div class="code-bar"><span class="code-lang"><span class="code-dots"><i></i><i></i><i></i></span>${label}</span><button type="button" class="copy">📋 Copiar</button></div><pre><code>${highlight(code, lang)}</code></pre></div>`;
   }
 
   function renderList(items) {

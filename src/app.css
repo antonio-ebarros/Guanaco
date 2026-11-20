@@ -495,14 +495,97 @@ select option {
   padding: 12px 14px;
   overflow-x: auto;
   font-size: 0.85em;
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+  line-height: 1.55;
 }
 .msg-body code {
   background: var(--code-bg);
   padding: 2px 6px;
   border-radius: 5px;
-  font-size: 0.88em;
+  font-size: 0.86em;
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
 }
-.msg-body pre code { background: transparent; padding: 0; }
+.msg-body pre code { background: transparent; padding: 0; font-size: 1em; }
+
+/* BLOCOS DE CÓDIGO ESTILO IDE & SYNTAX HIGHLIGHTING */
+.msg-body .code {
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--pre-bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.msg-body .code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 14px;
+  background: rgba(128, 138, 155, 0.11);
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--dim);
+  user-select: none;
+}
+.msg-body .code-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  letter-spacing: 0.05em;
+  color: var(--accent-strong);
+}
+.msg-body .code-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.msg-body .code-dots i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  opacity: 0.8;
+}
+.msg-body .code-dots i:nth-child(1) { background: #ff5f56; }
+.msg-body .code-dots i:nth-child(2) { background: #ffbd2e; }
+.msg-body .code-dots i:nth-child(3) { background: #27c93f; }
+.msg-body .code-bar .copy {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.msg-body .code-bar .copy:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.msg-body .code pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 14px 16px;
+}
+
+/* Cores de Syntax Highlighting (Tema Claro) */
+.t-k { color: #8250df; font-weight: 600; }
+.t-f { color: #0550ae; font-weight: 600; }
+.t-s { color: #116329; }
+.t-n { color: #953800; }
+.t-c { color: #6e7781; font-style: italic; }
+
+/* Cores de Syntax Highlighting (Tema Escuro) */
+[data-theme="dark"] .t-k { color: #c678dd; font-weight: 600; }
+[data-theme="dark"] .t-f { color: #61afef; font-weight: 600; }
+[data-theme="dark"] .t-s { color: #98c379; }
+[data-theme="dark"] .t-n { color: #d19a66; }
+[data-theme="dark"] .t-c { color: #6b7688; font-style: italic; }
 
 /* COMPOSER VIDRO FOSCO & LIVE MARKDOWN */
 .composer {
