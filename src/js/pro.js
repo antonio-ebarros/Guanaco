@@ -50,7 +50,6 @@ export const DEFAULT_PRO_SETTINGS = {
   numCtx: 4096,
   repeatPenalty: 1.1,
   numGpu: -1,
-  enableSmartTools: true,
   enableKnowledgeFolder: false,
   knowledgeFolder: '',
   engine: 'ollama',
@@ -63,7 +62,9 @@ export function getProSettings() {
     if (!raw) return { ...DEFAULT_PRO_SETTINGS };
     const parsed = JSON.parse(raw);
     const customPersonas = Array.isArray(parsed.customPersonas)
-      ? parsed.customPersonas.filter(p => p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.prompt === 'string')
+      ? parsed.customPersonas.filter(
+          p => p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.prompt === 'string'
+        )
       : [];
     const allIds = new Set([...BUILTIN_PERSONAS.map(p => p.id), ...customPersonas.map(p => p.id)]);
     return {
@@ -75,7 +76,6 @@ export function getProSettings() {
       numCtx: Number.isFinite(Number(parsed.numCtx)) ? Number(parsed.numCtx) : 4096,
       repeatPenalty: Number.isFinite(Number(parsed.repeatPenalty)) ? Number(parsed.repeatPenalty) : 1.1,
       numGpu: Number.isFinite(Number(parsed.numGpu)) ? Number(parsed.numGpu) : -1,
-      enableSmartTools: parsed.enableSmartTools !== undefined ? Boolean(parsed.enableSmartTools) : true,
       enableKnowledgeFolder: Boolean(parsed.enableKnowledgeFolder),
       knowledgeFolder: typeof parsed.knowledgeFolder === 'string' ? parsed.knowledgeFolder : '',
       engine: parsed.engine === 'llamafile' ? 'llamafile' : 'ollama',
@@ -92,6 +92,8 @@ export function getAllPersonas(cfg = getProSettings()) {
     label: t(p.nameKey),
     desc: t(p.descKey),
     prompt: p.prompt,
+    folder: '',
+    preferredModel: '',
     isCustom: false,
   }));
   const customs = (cfg.customPersonas || []).map(p => ({
@@ -99,15 +101,32 @@ export function getAllPersonas(cfg = getProSettings()) {
     label: p.name,
     desc: p.prompt,
     prompt: p.prompt,
+    folder: p.folder || '',
+    preferredModel: p.preferredModel || '',
     isCustom: true,
   }));
   return [...builtins, ...customs];
+}
+
+export function applyPersonaPreferredModel(personaId) {
+  if (!state.license?.active) return;
+  const cfg = getProSettings();
+  const all = getAllPersonas(cfg);
+  const p = all.find(x => x.id === personaId);
+  if (p?.preferredModel) {
+    const modelSel = $('#model-select');
+    const exists = (state.installed || []).some(m => m.name === p.preferredModel);
+    if (modelSel && exists) {
+      modelSel.value = p.preferredModel;
+    }
+  }
 }
 
 export function saveProSettings(partial) {
   const next = { ...getProSettings(), ...partial };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   renderChatPersonaSelect();
+  if (partial.persona) applyPersonaPreferredModel(partial.persona);
   return next;
 }
 
@@ -117,11 +136,25 @@ export function getEffectiveSystemPrompt() {
   const all = getAllPersonas(cfg);
   const personaObj = all.find(p => p.id === cfg.persona) || all[0];
   const parts = [];
-  if (personaObj?.prompt) parts.push(`Personalidade ativa (${personaObj.label}):\n${personaObj.prompt}`);
+  if (personaObj?.prompt) parts.push(`Assistente / Personalidade ativa (${personaObj.label}):\n${personaObj.prompt}`);
   if (cfg.customPrompt && cfg.customPrompt.trim()) {
     parts.push(`Contexto e preferências globais do usuário:\n${cfg.customPrompt.trim()}`);
   }
   return parts.length ? parts.join('\n\n') : null;
+}
+
+export function getEffectiveKnowledgeFolder() {
+  if (!state.license?.active) return null;
+  const cfg = getProSettings();
+  const all = getAllPersonas(cfg);
+  const personaObj = all.find(p => p.id === cfg.persona);
+  if (personaObj?.folder && personaObj.folder.trim()) {
+    return personaObj.folder.trim();
+  }
+  if (cfg.enableKnowledgeFolder && cfg.knowledgeFolder && cfg.knowledgeFolder.trim()) {
+    return cfg.knowledgeFolder.trim();
+  }
+  return null;
 }
 
 export async function loadLicenseStatus() {
@@ -136,8 +169,11 @@ export async function loadLicenseStatus() {
 }
 
 export function renderProBadge() {
+  const isPro = Boolean(state.license?.active);
   const badge = $('#brand-pro-badge');
-  if (badge) badge.hidden = !state.license?.active;
+  if (badge) badge.hidden = !isPro;
+  const expBtn = $('#btn-export-md');
+  if (expBtn) expBtn.hidden = !isPro;
 }
 
 export function renderChatPersonaSelect() {
@@ -145,6 +181,8 @@ export function renderChatPersonaSelect() {
   if (!sel) return;
   const isPro = Boolean(state.license?.active);
   sel.hidden = !isPro;
+  const expBtn = $('#btn-export-md');
+  if (expBtn) expBtn.hidden = !isPro;
   if (!isPro) return;
 
   const cfg = getProSettings();
@@ -153,7 +191,7 @@ export function renderChatPersonaSelect() {
   for (const p of all) {
     const opt = document.createElement('option');
     opt.value = p.id;
-    opt.textContent = p.label;
+    opt.textContent = p.folder ? `${p.label} 📂` : p.label;
     sel.append(opt);
   }
   sel.value = cfg.persona;
@@ -173,36 +211,16 @@ let showPersonaCreator = false;
 export function renderProControlSection(onLicenseChanged) {
   const licCard = $('#pro-license-card');
   const studioCard = $('#pro-studio-card');
-  if (!licCard || !studioCard) return;
+  const toolsCard = $('#pro-tools-card');
+  if (!licCard || !studioCard || !toolsCard) return;
 
   const isPro = Boolean(state.license?.active);
   const lic = state.license || {};
 
-  if (isPro) {
-    licCard.className = 'info-card pro-card-active';
-    licCard.innerHTML = `
-      <div class="row-between">
-        <div>
-          <span class="badge-pro-gold">✨ GUANACO PRO ATIVO</span>
-          <h3 class="pro-card-title">${t('proActiveTitle')}</h3>
-        </div>
-        <button id="btn-pro-deactivate" class="btn-ghost small" type="button">${t('proDeactivateBtn')}</button>
-      </div>
-      <div class="pro-meta-grid">
-        <div><span class="muted">${t('proHolderLabel')}:</span> <strong>${lic.holder || 'Guanaco Pro'}</strong></div>
-        ${lic.email ? `<div><span class="muted">E-mail:</span> <strong>${lic.email}</strong></div>` : ''}
-        ${lic.issuedAt ? `<div><span class="muted">${t('proIssuedLabel')}:</span> <strong>${lic.issuedAt}</strong></div>` : ''}
-        <div><span class="muted">${t('proTypeLabel')}:</span> <strong>${t('proLifetimeVal')}</strong></div>
-      </div>
-    `;
-    licCard.querySelector('#btn-pro-deactivate')?.addEventListener('click', async () => {
-      state.license = await invoke('deactivate_license');
-      renderProBadge();
-      renderProfilePill();
-      renderChatPersonaSelect();
-      if (typeof onLicenseChanged === 'function') onLicenseChanged();
-    });
-  } else {
+  if (!isPro) {
+    // No modo Gratuito, ocultamos os formulários pesados para manter a interface 100% limpa!
+    studioCard.hidden = true;
+    toolsCard.hidden = true;
     licCard.className = 'info-card pro-card-upsell';
     licCard.innerHTML = `
       <div class="row-between">
@@ -213,7 +231,13 @@ export function renderProControlSection(onLicenseChanged) {
         <span class="badge-pro">${t('proOneTimeBadge')}</span>
       </div>
       <p class="muted">${t('proUpsellDesc')}</p>
-      <form id="pro-activate-form" class="inline-form">
+      <div class="pro-highlights-grid">
+        <div class="pro-highlight-item"><strong>${t('proFeat1Title')}</strong><span class="muted">${t('proFeat1Desc')}</span></div>
+        <div class="pro-highlight-item"><strong>${t('proFeat2Title')}</strong><span class="muted">${t('proFeat2Desc')}</span></div>
+        <div class="pro-highlight-item"><strong>${t('proFeat3Title')}</strong><span class="muted">${t('proFeat3Desc')}</span></div>
+        <div class="pro-highlight-item"><strong>${t('proFeat4Title')}</strong><span class="muted">${t('proFeat4Desc')}</span></div>
+      </div>
+      <form id="pro-activate-form" class="inline-form" style="margin-top:6px;">
         <input id="pro-key-input" type="text" placeholder="GUANACO-PRO-..." autocomplete="off" spellcheck="false">
         <button class="btn-primary" type="submit">${t('proActivateBtn')}</button>
       </form>
@@ -239,19 +263,56 @@ export function renderProControlSection(onLicenseChanged) {
         }
       }
     });
+    return;
   }
+
+  studioCard.hidden = false;
+  toolsCard.hidden = false;
+  licCard.className = 'info-card pro-card-active';
+  licCard.innerHTML = `
+    <div class="row-between">
+      <div>
+        <span class="badge-pro-gold">✨ GUANACO PRO ATIVO</span>
+        <h3 class="pro-card-title">${t('proActiveTitle')}</h3>
+      </div>
+      <button id="btn-pro-deactivate" class="btn-ghost small" type="button">${t('proDeactivateBtn')}</button>
+    </div>
+    <div class="pro-meta-grid">
+      <div><span class="muted">${t('proHolderLabel')}:</span> <strong>${lic.holder || 'Guanaco Pro'}</strong></div>
+      ${lic.email ? `<div><span class="muted">E-mail:</span> <strong>${lic.email}</strong></div>` : ''}
+      ${lic.issuedAt ? `<div><span class="muted">${t('proIssuedLabel')}:</span> <strong>${lic.issuedAt}</strong></div>` : ''}
+      <div><span class="muted">${t('proTypeLabel')}:</span> <strong>${t('proLifetimeVal')}</strong></div>
+    </div>
+  `;
+  licCard.querySelector('#btn-pro-deactivate')?.addEventListener('click', async () => {
+    state.license = await invoke('deactivate_license');
+    renderProBadge();
+    renderProfilePill();
+    renderChatPersonaSelect();
+    if (typeof onLicenseChanged === 'function') onLicenseChanged();
+  });
 
   const cfg = getProSettings();
   const allPersonas = getAllPersonas(cfg);
   const activePersona = allPersonas.find(p => p.id === cfg.persona) || allPersonas[0];
-  studioCard.className = 'info-card pro-studio' + (isPro ? '' : ' locked');
+  studioCard.className = 'info-card pro-studio';
 
   const personaButtonsHtml = allPersonas
     .map(p => {
       const cls = 'persona-chip' + (p.id === activePersona.id ? ' active' : '');
-      return `<button type="button" class="${cls}" data-persona="${p.id}" ${isPro ? '' : 'disabled'}>${p.label}</button>`;
+      const folderTag = p.folder ? ' 📂' : '';
+      return `<button type="button" class="${cls}" data-persona="${p.id}">${p.label}${folderTag}</button>`;
     })
     .join('');
+
+  const installedModelsOptions = [
+    `<option value="">${t('proPersonaAnyModel')}</option>`,
+    ...(state.installed || []).map(m => `<option value="${m.name}">${m.name}</option>`),
+  ].join('');
+
+  const activePersonaExtraMeta = [];
+  if (activePersona.folder) activePersonaExtraMeta.push(`📂 <code>${activePersona.folder}</code>`);
+  if (activePersona.preferredModel) activePersonaExtraMeta.push(`🦙 <code>${activePersona.preferredModel}</code>`);
 
   studioCard.innerHTML = `
     <div class="row-between">
@@ -259,24 +320,34 @@ export function renderProControlSection(onLicenseChanged) {
         <div class="card-kicker">${t('proStudioKicker')}</div>
         <strong>${t('proPersonasTitle')}</strong>
       </div>
-      <button id="btn-toggle-new-persona" class="btn-ghost small" type="button" ${isPro ? '' : 'disabled'}>${t('proNewPersonaBtn')}</button>
+      <button id="btn-toggle-new-persona" class="btn-ghost small" type="button">${t('proNewPersonaBtn')}</button>
     </div>
 
     <div class="persona-grid">${personaButtonsHtml}</div>
 
     <div class="row-between">
-      <div id="persona-desc" class="muted">${activePersona.desc}</div>
+      <div>
+        <div id="persona-desc" class="muted">${activePersona.desc}</div>
+        ${activePersonaExtraMeta.length ? `<div class="muted" style="margin-top:4px;font-size:12px;">${activePersonaExtraMeta.join(' · ')}</div>` : ''}
+      </div>
       ${
-        isPro && activePersona.isCustom
+        activePersona.isCustom
           ? `<button id="btn-del-persona" class="btn-ghost small danger" type="button">${t('proDelPersonaBtn')}</button>`
           : ''
       }
     </div>
 
-    <div id="new-persona-box" class="new-persona-box" ${showPersonaCreator && isPro ? '' : 'hidden'}>
+    <div id="new-persona-box" class="new-persona-box" ${showPersonaCreator ? '' : 'hidden'}>
       <strong>${t('proCreatePersonaTitle')}</strong>
-      <input id="new-persona-name" class="gguf-text-input" type="text" placeholder="${t('proNewPersonaNamePh')}">
+      <div class="pro-params-grid">
+        <input id="new-persona-name" class="gguf-text-input" type="text" placeholder="${t('proNewPersonaNamePh')}">
+        <select id="new-persona-model" class="gguf-select">${installedModelsOptions}</select>
+      </div>
       <textarea id="new-persona-prompt" rows="2" placeholder="${t('proNewPersonaPromptPh')}"></textarea>
+      <div class="inline-form">
+        <input id="new-persona-folder" class="gguf-text-input" type="text" placeholder="${t('proPersonaFolderPh')}">
+        <button id="btn-pick-persona-folder" class="btn-ghost small" type="button">${t('proRagPickBtn')}</button>
+      </div>
       <div class="row-between">
         <span></span>
         <div style="display:flex;gap:8px;">
@@ -291,12 +362,12 @@ export function renderProControlSection(onLicenseChanged) {
         <label for="pro-system-prompt"><strong>${t('proSysPromptLabel')}</strong></label>
         <span class="muted">${t('proSysPromptHint')}</span>
       </div>
-      <textarea id="pro-system-prompt" rows="2" placeholder="${t('proSysPromptPlaceholder')}" ${isPro ? '' : 'disabled'}></textarea>
+      <textarea id="pro-system-prompt" rows="2" placeholder="${t('proSysPromptPlaceholder')}"></textarea>
     </div>
 
     <div class="pro-params-head row-between">
       <strong>${t('proParamsTitle')}</strong>
-      <button id="btn-pro-reset" class="btn-ghost small" type="button" ${isPro ? '' : 'disabled'}>${t('proResetBtn')}</button>
+      <button id="btn-pro-reset" class="btn-ghost small" type="button">${t('proResetBtn')}</button>
     </div>
 
     <div class="pro-params-grid">
@@ -305,7 +376,7 @@ export function renderProControlSection(onLicenseChanged) {
           <label for="pro-temp">${t('proTempLabel')}</label>
           <strong id="pro-temp-val">${cfg.temperature.toFixed(2)}</strong>
         </div>
-        <input id="pro-temp" type="range" min="0" max="1.6" step="0.05" value="${cfg.temperature}" ${isPro ? '' : 'disabled'}>
+        <input id="pro-temp" type="range" min="0" max="1.6" step="0.05" value="${cfg.temperature}">
         <span class="muted">${t('proTempDesc')}</span>
       </div>
 
@@ -314,7 +385,7 @@ export function renderProControlSection(onLicenseChanged) {
           <label for="pro-top-p">${t('proTopPLabel')}</label>
           <strong id="pro-top-p-val">${cfg.topP.toFixed(2)}</strong>
         </div>
-        <input id="pro-top-p" type="range" min="0.1" max="1.0" step="0.05" value="${cfg.topP}" ${isPro ? '' : 'disabled'}>
+        <input id="pro-top-p" type="range" min="0.1" max="1.0" step="0.05" value="${cfg.topP}">
         <span class="muted">${t('proTopPDesc')}</span>
       </div>
 
@@ -323,7 +394,7 @@ export function renderProControlSection(onLicenseChanged) {
           <label for="pro-rep">${t('proRepLabel')}</label>
           <strong id="pro-rep-val">${cfg.repeatPenalty.toFixed(2)}</strong>
         </div>
-        <input id="pro-rep" type="range" min="1.0" max="1.5" step="0.05" value="${cfg.repeatPenalty}" ${isPro ? '' : 'disabled'}>
+        <input id="pro-rep" type="range" min="1.0" max="1.5" step="0.05" value="${cfg.repeatPenalty}">
         <span class="muted">${t('proRepDesc')}</span>
       </div>
 
@@ -331,7 +402,7 @@ export function renderProControlSection(onLicenseChanged) {
         <div class="row-between">
           <label for="pro-ctx">${t('proCtxLabel')}</label>
         </div>
-        <select id="pro-ctx" ${isPro ? '' : 'disabled'}>
+        <select id="pro-ctx">
           <option value="2048" ${cfg.numCtx === 2048 ? 'selected' : ''}>2.048 tokens (Leve / Rápido)</option>
           <option value="4096" ${cfg.numCtx === 4096 ? 'selected' : ''}>4.096 tokens (Padrão)</option>
           <option value="8192" ${cfg.numCtx === 8192 ? 'selected' : ''}>8.192 tokens (Textos longos)</option>
@@ -345,7 +416,7 @@ export function renderProControlSection(onLicenseChanged) {
         <div class="row-between">
           <label for="pro-gpu">${t('proGpuLabel')}</label>
         </div>
-        <select id="pro-gpu" ${isPro ? '' : 'disabled'}>
+        <select id="pro-gpu">
           <option value="-1" ${cfg.numGpu === -1 ? 'selected' : ''}>${t('proGpuAuto')}</option>
           <option value="16" ${cfg.numGpu === 16 ? 'selected' : ''}>${t('proGpu16')}</option>
           <option value="28" ${cfg.numGpu === 28 ? 'selected' : ''}>${t('proGpu28')}</option>
@@ -362,8 +433,6 @@ export function renderProControlSection(onLicenseChanged) {
     promptEl.value = cfg.customPrompt || '';
   }
 
-  if (!isPro) return;
-
   studioCard.querySelectorAll('.persona-chip').forEach(btn => {
     btn.addEventListener('click', () => {
       saveProSettings({ persona: btn.dataset.persona });
@@ -379,6 +448,14 @@ export function renderProControlSection(onLicenseChanged) {
     }
   });
 
+  studioCard.querySelector('#btn-pick-persona-folder')?.addEventListener('click', async () => {
+    try {
+      const picked = await invoke('pick_knowledge_folder');
+      const fInput = studioCard.querySelector('#new-persona-folder');
+      if (picked && fInput) fInput.value = picked;
+    } catch {}
+  });
+
   studioCard.querySelector('#btn-cancel-persona')?.addEventListener('click', () => {
     showPersonaCreator = false;
     renderProControlSection(onLicenseChanged);
@@ -387,9 +464,11 @@ export function renderProControlSection(onLicenseChanged) {
   studioCard.querySelector('#btn-save-persona')?.addEventListener('click', () => {
     const name = (studioCard.querySelector('#new-persona-name')?.value || '').trim();
     const prompt = (studioCard.querySelector('#new-persona-prompt')?.value || '').trim();
+    const folder = (studioCard.querySelector('#new-persona-folder')?.value || '').trim();
+    const preferredModel = (studioCard.querySelector('#new-persona-model')?.value || '').trim();
     if (!name || !prompt) return;
     const id = `custom_${Date.now()}`;
-    const list = [...(getProSettings().customPersonas || []), { id, name, prompt }];
+    const list = [...(getProSettings().customPersonas || []), { id, name, prompt, folder, preferredModel }];
     showPersonaCreator = false;
     saveProSettings({ customPersonas: list, persona: id });
     renderProControlSection(onLicenseChanged);
@@ -453,8 +532,13 @@ async function renderProToolsAndEngineCard(onLicenseChanged) {
   const card = $('#pro-tools-card');
   if (!card) return;
   const isPro = Boolean(state.license?.active);
+  if (!isPro) {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
   const cfg = getProSettings();
-  card.className = 'info-card pro-studio' + (isPro ? '' : ' locked');
+  card.className = 'info-card pro-studio';
 
   card.innerHTML = `
     <div class="row-between">
@@ -462,30 +546,20 @@ async function renderProToolsAndEngineCard(onLicenseChanged) {
         <div class="card-kicker">${t('proToolsKicker')}</div>
         <strong>${t('proToolsTitle')}</strong>
       </div>
-      <span class="${isPro ? 'badge-ok' : 'badge-pro'}">${isPro ? t('profActive') : 'Guanaco Pro'}</span>
+      <span class="badge-ok">${t('profActive')}</span>
     </div>
 
     <div class="pro-tool-box">
       <label class="pro-check-row">
-        <input id="pro-smart-tools-chk" type="checkbox" ${cfg.enableSmartTools ? 'checked' : ''} ${isPro ? '' : 'disabled'}>
-        <div>
-          <strong>${t('proSmartToolsName')}</strong>
-          <div class="muted">${t('proSmartToolsDesc')}</div>
-        </div>
-      </label>
-    </div>
-
-    <div class="pro-tool-box">
-      <label class="pro-check-row">
-        <input id="pro-rag-chk" type="checkbox" ${cfg.enableKnowledgeFolder ? 'checked' : ''} ${isPro ? '' : 'disabled'}>
+        <input id="pro-rag-chk" type="checkbox" ${cfg.enableKnowledgeFolder ? 'checked' : ''}>
         <div>
           <strong>${t('proRagName')}</strong>
           <div class="muted">${t('proRagDesc')}</div>
         </div>
       </label>
       <div class="inline-form" style="margin-top:8px;">
-        <input id="pro-rag-folder" type="text" placeholder="${t('proRagFolderPh')}" value="${cfg.knowledgeFolder || ''}" ${isPro ? '' : 'disabled'}>
-        <button id="btn-pick-rag-folder" class="btn-ghost" type="button" ${isPro ? '' : 'disabled'}>${t('proRagPickBtn')}</button>
+        <input id="pro-rag-folder" type="text" placeholder="${t('proRagFolderPh')}" value="${cfg.knowledgeFolder || ''}">
+        <button id="btn-pick-rag-folder" class="btn-ghost" type="button">${t('proRagPickBtn')}</button>
       </div>
       <div id="pro-rag-stats" class="muted" style="margin-top:6px;"></div>
     </div>
@@ -499,15 +573,15 @@ async function renderProToolsAndEngineCard(onLicenseChanged) {
     <p class="muted" style="margin:0;">${t('proEngineDesc')}</p>
 
     <div class="persona-grid">
-      <button type="button" class="persona-chip ${cfg.engine === 'ollama' ? 'active' : ''}" data-eng="ollama" ${isPro ? '' : 'disabled'}>${t('proEngineOllama')}</button>
-      <button type="button" class="persona-chip ${cfg.engine === 'llamafile' ? 'active' : ''}" data-eng="llamafile" ${isPro ? '' : 'disabled'}>${t('proEngineLlamafile')}</button>
+      <button type="button" class="persona-chip ${cfg.engine === 'ollama' ? 'active' : ''}" data-eng="ollama">${t('proEngineOllama')}</button>
+      <button type="button" class="persona-chip ${cfg.engine === 'llamafile' ? 'active' : ''}" data-eng="llamafile">${t('proEngineLlamafile')}</button>
     </div>
 
     <div id="pro-llamafile-box" ${cfg.engine === 'llamafile' ? '' : 'hidden'}>
       <div class="inline-form">
-        <input id="pro-llamafile-path" type="text" placeholder="${t('proLlamafilePh')}" value="${cfg.llamafilePath || ''}" ${isPro ? '' : 'disabled'}>
-        <button id="btn-pick-llamafile" class="btn-ghost" type="button" ${isPro ? '' : 'disabled'}>${t('proLlamafilePickBtn')}</button>
-        <button id="btn-apply-llamafile" class="btn-primary" type="button" ${isPro ? '' : 'disabled'}>${t('proLlamafileApplyBtn')}</button>
+        <input id="pro-llamafile-path" type="text" placeholder="${t('proLlamafilePh')}" value="${cfg.llamafilePath || ''}">
+        <button id="btn-pick-llamafile" class="btn-ghost" type="button">${t('proLlamafilePickBtn')}</button>
+        <button id="btn-apply-llamafile" class="btn-primary" type="button">${t('proLlamafileApplyBtn')}</button>
       </div>
       <div id="pro-engine-msg" class="muted" style="margin-top:6px;" hidden></div>
     </div>
@@ -526,7 +600,7 @@ async function renderProToolsAndEngineCard(onLicenseChanged) {
         statsEl.textContent = t('proRagNotFound');
       } else {
         const kb = (st.totalBytes / 1024).toFixed(1);
-        statsEl.textContent = t('proRagStatsOk', { count: st.fileCount, kb });
+        statsEl.textContent = t('proRagStatsOk', { count: st.fileCount, pdfs: st.pdfCount || 0, kb });
       }
     } catch {
       statsEl.textContent = '';
@@ -536,13 +610,6 @@ async function renderProToolsAndEngineCard(onLicenseChanged) {
   if (cfg.knowledgeFolder) {
     updateRagStats(cfg.knowledgeFolder);
   }
-
-  if (!isPro) return;
-
-  const smartChk = card.querySelector('#pro-smart-tools-chk');
-  smartChk?.addEventListener('change', () => {
-    saveProSettings({ enableSmartTools: smartChk.checked });
-  });
 
   const ragChk = card.querySelector('#pro-rag-chk');
   ragChk?.addEventListener('change', () => {
@@ -620,48 +687,37 @@ async function renderProToolsAndEngineCard(onLicenseChanged) {
 }
 
 export function renderProModelsBuilder(onModelCreated) {
+  const heading = $('#pro-gguf-heading');
   const card = $('#pro-gguf-card');
   if (!card) return;
   const isPro = Boolean(state.license?.active);
-  card.className = 'info-card pro-studio' + (isPro ? '' : ' locked');
+  if (heading) heading.hidden = !isPro;
+  card.hidden = !isPro;
+  if (!isPro) return;
 
+  card.className = 'info-card pro-studio';
   card.innerHTML = `
     <div class="row-between">
       <div>
         <div class="card-kicker">${t('proGgufKicker')}</div>
         <strong>${t('proGgufTitle')}</strong>
       </div>
-      <span class="${isPro ? 'badge-ok' : 'badge-pro-gold'}">✨ Guanaco Pro</span>
+      <span class="badge-ok">✨ Guanaco Pro</span>
     </div>
     <p class="muted">${t('proGgufDesc')}</p>
 
     <div class="inline-form">
-      <input id="gguf-path-input" type="text" placeholder="${t('proGgufPathPlaceholder')}" ${isPro ? '' : 'disabled'}>
-      <button id="btn-pick-gguf" class="btn-ghost" type="button" ${isPro ? '' : 'disabled'}>${t('proGgufPickBtn')}</button>
+      <input id="gguf-path-input" type="text" placeholder="${t('proGgufPathPlaceholder')}">
+      <button id="btn-pick-gguf" class="btn-ghost" type="button">${t('proGgufPickBtn')}</button>
     </div>
 
     <div class="inline-form">
-      <input id="gguf-name-input" type="text" placeholder="${t('proGgufNamePlaceholder')}" ${isPro ? '' : 'disabled'}>
-      ${
-        isPro
-          ? `<button id="btn-create-gguf" class="btn-primary" type="button">${t('proGgufCreateBtn')}</button>`
-          : `<button id="btn-unlock-gguf" class="btn-ghost small" type="button">${t('profLockedBtn')}</button>`
-      }
+      <input id="gguf-name-input" type="text" placeholder="${t('proGgufNamePlaceholder')}">
+      <button id="btn-create-gguf" class="btn-primary" type="button">${t('proGgufCreateBtn')}</button>
     </div>
 
     <div id="gguf-status-msg" class="muted" hidden></div>
   `;
-
-  if (!isPro) {
-    card.querySelector('#btn-unlock-gguf')?.addEventListener('click', () => {
-      switchView('control');
-      setTimeout(() => {
-        $('#pro-license-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        $('#pro-key-input')?.focus();
-      }, 150);
-    });
-    return;
-  }
 
   const pathInput = card.querySelector('#gguf-path-input');
   const nameInput = card.querySelector('#gguf-name-input');

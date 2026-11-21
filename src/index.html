@@ -57,6 +57,7 @@
         <div class="head-right">
           <button id="btn-profile-pill" class="profile-pill" type="button" data-i18n-title="profilePillTitle" title="Perfil de comportamento da IA"></button>
           <select id="persona-select" class="persona-pill" aria-label="Personalidade Pro" hidden></select>
+          <button id="btn-export-md" class="btn-ghost small" type="button" hidden data-i18n="proExportMdBtn" data-i18n-title="proExportMdTitle" title="Exportar conversa em Markdown (.md)">📤 .MD</button>
           <div class="font-ctrl">
             <button id="btn-font-dec" type="button" data-i18n-title="fontDecTitle" aria-label="Diminuir letra">A-</button>
             <span id="font-size-label">18px</span>
@@ -115,8 +116,8 @@
           <button class="btn-primary" type="submit" data-i18n="download">Baixar</button>
         </form>
 
-        <h2 class="sec-title" data-i18n="proGgufSectionTitle">Guanaco Pro — Importar Arquivo .GGUF Local</h2>
-        <div id="pro-gguf-card" class="info-card"></div>
+        <h2 id="pro-gguf-heading" class="sec-title" data-i18n="proGgufSectionTitle" hidden>Guanaco Pro — Importar Arquivo .GGUF Local</h2>
+        <div id="pro-gguf-card" class="info-card" hidden></div>
       </div>
     </section>
 

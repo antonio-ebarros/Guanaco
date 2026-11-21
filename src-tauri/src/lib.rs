@@ -41,6 +41,7 @@ pub fn run() {
             license::deactivate_license,
             tools::pick_knowledge_folder,
             tools::scan_knowledge_folder,
+            tools::export_conversation_markdown,
             llamafile::get_engine_config,
             llamafile::set_engine_config,
             llamafile::pick_llamafile

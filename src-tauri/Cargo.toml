@@ -22,11 +22,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 ring = "0.17"
+flate2 = "1"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 tar = "0.4"
 zstd = "0.13"
-flate2 = "1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 zip = "2"

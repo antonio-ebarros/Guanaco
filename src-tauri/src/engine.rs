@@ -53,8 +53,6 @@ pub struct ChatRequest {
     #[serde(default)]
     pub num_gpu: Option<i32>,
     #[serde(default)]
-    pub enable_smart_tools: bool,
-    #[serde(default)]
     pub knowledge_folder: Option<String>,
 }
 
@@ -65,6 +63,8 @@ pub struct ChatEvent {
     pub delta: String,
     pub done: bool,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Clone)]

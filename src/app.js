@@ -15,6 +15,7 @@ import {
   initChatEvents,
   loadConversations,
   persistConversations,
+  renderBubbleSources,
   renderChat,
   stopThinkingTimer,
 } from './js/chat.js';
@@ -59,11 +60,17 @@ listen('pull-progress', ev => {
 
 listen('chat-event', ev => {
   if (state.streamCancelled) return;
-  const { convId, delta, done, error } = ev.payload;
+  const { convId, delta, done, error, sources } = ev.payload;
   const conv = state.conversations.find(c => c.id === convId);
   if (!conv) return;
   const last = conv.messages[conv.messages.length - 1];
   if (!last || last.role !== 'assistant') return;
+  if (Array.isArray(sources) && sources.length) {
+    last.sources = sources;
+    if (convId === state.activeConvId && state.activeStreamBubble) {
+      renderBubbleSources(state.activeStreamBubble, sources);
+    }
+  }
   if (error) last.content += `\n\nErro: ${error}`;
   else if (delta) last.content += delta;
 

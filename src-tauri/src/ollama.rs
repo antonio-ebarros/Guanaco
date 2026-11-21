@@ -548,17 +548,26 @@ pub async fn chat_stream_impl(
             .find(|m| m.role == "user")
             .map(|m| m.content.as_str())
             .unwrap_or("");
-        let tools_part = if pro_active {
-            crate::tools::build_tools_augmentation(
-                last_user_query,
-                req.enable_smart_tools,
-                req.knowledge_folder.as_deref(),
-            )
-            .map(|t| format!("\n\nDados verificados pelas Ferramentas Locais do Guanaco Pro:\n{t}"))
-            .unwrap_or_default()
-        } else {
-            String::new()
-        };
+        let (tools_aug, matched_sources) = crate::tools::build_tools_augmentation(
+            last_user_query,
+            pro_active,
+            req.knowledge_folder.as_deref(),
+        );
+        if !matched_sources.is_empty() {
+            let _ = app.emit(
+                "chat-event",
+                ChatEvent {
+                    conv_id: req.conv_id.clone(),
+                    delta: String::new(),
+                    done: false,
+                    error: None,
+                    sources: Some(matched_sources),
+                },
+            );
+        }
+        let tools_part = tools_aug
+            .map(|t| format!("\n\nDados verificados pelo sistema local do Guanaco:\n{t}"))
+            .unwrap_or_default();
         let sys_content = format!(
             "{}\n{}\nModelo ativo nesta conversa: {}.{}{}",
             GUANACO_SYSTEM_PROMPT.trim(),
@@ -630,6 +639,7 @@ pub async fn chat_stream_impl(
                 delta: String::new(),
                 done: true,
                 error: None,
+                sources: None,
             });
             return Ok(());
         }
@@ -679,6 +689,7 @@ pub async fn chat_stream_impl(
             delta: String::new(),
             done: true,
             error: Some(msg.clone()),
+            sources: None,
         });
         return Err(msg);
     }
@@ -694,6 +705,7 @@ pub async fn chat_stream_impl(
                     delta: String::new(),
                     done: true,
                     error: None,
+                    sources: None,
                 });
                 break;
             }
@@ -723,6 +735,7 @@ pub async fn chat_stream_impl(
                     delta,
                     done,
                     error: None,
+                    sources: None,
                 });
             }
         }

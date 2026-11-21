@@ -2,7 +2,7 @@ import { $, invoke, state, switchView } from './state.js';
 import { bootstrap, installEngine, startEngine } from './models.js';
 import { copyResponseText, stopSpeaking, toggleSpeak } from './speech.js';
 import { getResponseProfile } from './theme.js';
-import { getEffectiveSystemPrompt, getProSettings } from './pro.js';
+import { getEffectiveKnowledgeFolder, getEffectiveSystemPrompt, getProSettings } from './pro.js';
 import { t } from './i18n.js';
 
 let thinkingTimer = null;
@@ -100,7 +100,25 @@ function startThinkingTimer(label = 'Pensando') {
   }, 1000);
 }
 
-export function appendBubble(role, content, media = [], fileNames = [], thinkingLabel = null) {
+export function renderBubbleSources(el, sources = []) {
+  const box = el?.querySelector('.msg-sources');
+  if (!box) return;
+  if (!Array.isArray(sources) || !sources.length) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `<span class="sources-label">📚 ${t('sourcesConsulted')}:</span>`;
+  for (const s of sources) {
+    const tag = document.createElement('span');
+    tag.className = 'msg-source-tag';
+    tag.textContent = s;
+    box.append(tag);
+  }
+}
+
+export function appendBubble(role, content, media = [], fileNames = [], thinkingLabel = null, sources = []) {
   const el = document.createElement('div');
   el.className = `msg ${role}`;
   el.dataset.rawText = content || '';
@@ -119,6 +137,7 @@ export function appendBubble(role, content, media = [], fileNames = [], thinking
     </div>
     <div class="msg-thumbs" hidden></div>
     <div class="msg-files" hidden></div>
+    <div class="msg-sources" hidden></div>
     <div class="msg-body"></div>
   `;
 
@@ -127,6 +146,7 @@ export function appendBubble(role, content, media = [], fileNames = [], thinking
     const copyBtn = el.querySelector('.copy-btn');
     speakBtn.onclick = () => toggleSpeak(speakBtn, el.dataset.rawText);
     copyBtn.onclick = () => copyResponseText(copyBtn, el.dataset.rawText);
+    renderBubbleSources(el, sources);
   }
 
   const thumbs = el.querySelector('.msg-thumbs');
@@ -233,7 +253,8 @@ export function renderChat() {
       m.displayContent ?? m.content,
       m.previews || m.images || [],
       m.fileNames || [],
-      lbl
+      lbl,
+      m.sources || []
     );
     if (m.cancelled) {
       const body = bubble.querySelector('.msg-body');
@@ -570,6 +591,31 @@ export function initChatEvents() {
 
   $('#btn-new-chat').onclick = newConversation;
 
+  $('#btn-export-md')?.addEventListener('click', async () => {
+    const conv = activeConv();
+    if (!conv || !conv.messages.length) return;
+    const lines = [
+      `# ${conv.title || 'Conversa Guanaco'}`,
+      `> Exportado do **Guanaco Pro** em ${new Date().toLocaleString()}`,
+      '',
+    ];
+    for (const m of conv.messages) {
+      if (m.cancelled) continue;
+      const who = m.role === 'user' ? `## 👤 ${t('you')}` : `## 🦙 ${t('guanaco')}`;
+      lines.push(who, '');
+      if (Array.isArray(m.sources) && m.sources.length) {
+        lines.push(`*📚 ${t('sourcesConsulted')}: ${m.sources.join(', ')}*`, '');
+      }
+      lines.push(String(m.displayContent ?? m.content ?? '').trim(), '', '---', '');
+    }
+    try {
+      await invoke('export_conversation_markdown', {
+        title: conv.title || 'conversa-guanaco',
+        markdown: lines.join('\n'),
+      });
+    } catch {}
+  });
+
   $('#btn-stop').onclick = async () => {
     if (!state.busy) return;
     state.streamCancelled = true;
@@ -672,11 +718,7 @@ export function initChatEvents() {
           numCtx: proActive ? proCfg.numCtx : null,
           repeatPenalty: proActive ? proCfg.repeatPenalty : null,
           numGpu: proActive ? proCfg.numGpu : null,
-          enableSmartTools: proActive ? Boolean(proCfg.enableSmartTools) : false,
-          knowledgeFolder:
-            proActive && proCfg.enableKnowledgeFolder && proCfg.knowledgeFolder
-              ? proCfg.knowledgeFolder
-              : null,
+          knowledgeFolder: getEffectiveKnowledgeFolder(),
           messages: buildApiMessages(conv.messages),
         },
       });

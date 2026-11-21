@@ -323,15 +323,23 @@ async fn chat_stream_llamafile(
         .find(|m| m.role == "user")
         .map(|m| m.content.as_str())
         .unwrap_or("");
-    let tools_aug = if pro_active {
-        crate::tools::build_tools_augmentation(
-            last_user_query,
-            req.enable_smart_tools,
-            req.knowledge_folder.as_deref(),
-        )
-    } else {
-        None
-    };
+    let (tools_aug, matched_sources) = crate::tools::build_tools_augmentation(
+        last_user_query,
+        pro_active,
+        req.knowledge_folder.as_deref(),
+    );
+    if !matched_sources.is_empty() {
+        let _ = app.emit(
+            "chat-event",
+            ChatEvent {
+                conv_id: req.conv_id.clone(),
+                delta: String::new(),
+                done: false,
+                error: None,
+                sources: Some(matched_sources),
+            },
+        );
+    }
 
     let mut msgs: Vec<serde_json::Value> = Vec::with_capacity(req.messages.len() + 1);
     let profile_rule = match req.profile.as_str() {
@@ -398,6 +406,7 @@ async fn chat_stream_llamafile(
                 delta: String::new(),
                 done: true,
                 error: None,
+                sources: None,
             });
             return Ok(());
         }
@@ -413,6 +422,7 @@ async fn chat_stream_llamafile(
                 delta: String::new(),
                 done: true,
                 error: Some(msg.clone()),
+                sources: None,
             },
         );
         return Err(msg);
@@ -429,6 +439,7 @@ async fn chat_stream_llamafile(
                     delta: String::new(),
                     done: true,
                     error: None,
+                    sources: None,
                 });
                 break;
             }
@@ -442,6 +453,7 @@ async fn chat_stream_llamafile(
                     delta: String::new(),
                     done: true,
                     error: None,
+                    sources: None,
                 },
             );
             break;
@@ -465,6 +477,7 @@ async fn chat_stream_llamafile(
                         delta: String::new(),
                         done: true,
                         error: None,
+                        sources: None,
                     },
                 );
                 continue;
@@ -489,6 +502,7 @@ async fn chat_stream_llamafile(
                             delta,
                             done: finish,
                             error: None,
+                            sources: None,
                         },
                     );
                 }
