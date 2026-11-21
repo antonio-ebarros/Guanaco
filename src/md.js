@@ -1,25 +1,53 @@
 // Renderizador de Markdown mínimo e offline. Expõe window.md(texto, cursor?)
 window.md = (() => {
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const KW = new Set(('if else elif for while do return function def class import from as const let var int char float double void struct enum static public private protected new true false null None True False try except catch finally with in not and or switch case break continue async await fn pub use mod impl self this typeof package func go range defer bool string long unsigned sizeof lambda yield raise pass echo then fi done').split(' '));
-  const HASH = new Set(['python', 'py', 'bash', 'sh', 'shell', 'zsh', 'yaml', 'yml', 'toml', 'ruby', 'rb', 'dockerfile', 'makefile', 'conf', 'ini']);
+  const KW = new Set(('if else elif for while do return function def class import from as const let var int char float double void struct enum static public private protected new try except catch finally with in not and or is switch case break continue async await fn pub use mod impl typeof package func go range defer bool string long unsigned sizeof lambda yield raise pass echo then fi done match type interface typealias super select where insert update delete into values create table drop alter join on group by order limit').split(' '));
+  const LITERALS = new Set(['True', 'False', 'None', 'null', 'undefined', 'true', 'false', 'nil', 'self', 'this']);
+  const HASH_LANGS = new Set(['python', 'py', 'bash', 'sh', 'shell', 'zsh', 'yaml', 'yml', 'toml', 'ruby', 'rb', 'dockerfile', 'makefile', 'conf', 'ini', 'r']);
+  const SQL_LANGS = new Set(['sql', 'sqlite', 'psql', 'mysql']);
+  const HTML_LANGS = new Set(['html', 'xml', 'svg', 'vue']);
   const PLAIN = new Set(['', 'text', 'txt', 'plaintext', 'output', 'console']);
-  const STR = '("(?:\\\\.|[^"\\\\\\n])*"|\'(?:\\\\.|[^\'\\\\\\n])*\')';
-  const RE_SLASH = '(\\/\\/.*|\\/\\*[\\s\\S]*?\\*\\/)|' + STR + '|\\b(\\d+(?:\\.\\d+)?)\\b|(#\\w+)|\\b([A-Za-z_]\\w*)\\b';
-  const RE_HASH = '(#.*)|' + STR + '|\\b(\\d+(?:\\.\\d+)?)\\b|()|\\b([A-Za-z_]\\w*)\\b';
 
   function highlight(code, lang) {
     lang = (lang || '').toLowerCase();
     if (PLAIN.has(lang)) return esc(code);
-    const re = new RegExp(HASH.has(lang) ? RE_HASH.replace('|()', '') : RE_SLASH, 'g');
-    const hash = HASH.has(lang);
+
+    let commentRe = '\\/\\/.*|\\/\\*[\\s\\S]*?\\*\\/';
+    if (HASH_LANGS.has(lang)) commentRe = '#.*';
+    else if (SQL_LANGS.has(lang)) commentRe = '--.*|\\/\\*[\\s\\S]*?\\*\\/';
+    else if (HTML_LANGS.has(lang)) commentRe = '&lt;!--[\\s\\S]*?--&gt;|<!--[\\s\\S]*?-->';
+
+    const strRe = '[frbFRB]?\"\"\"[\\s\\S]*?\"\"\"|[frbFRB]?\'\'\'[\\s\\S]*?\'\'\'|`(?:\\\\.|[^`\\\\])*`|[frbFRB]?\"(?:\\\\.|[^\"\\\\\\n])*\"|[frbFRB]?\'(?:\\\\.|[^\'\\\\\\n])*\'';
+    const numRe = '\\b(?:0x[0-9a-fA-F]+|0b[01]+|\\d+(?:\\.\\d+)?)\\b';
+    const decRe = '@[A-Za-z_]\\w*';
+    const wordRe = '\\b[A-Za-z_]\\w*\\b';
+    const opRe = '==|!=|<=|>=|\\+=|-=|\\*=|/=|%=|=>|->|[+\\-*\\/%&|^~<>!=]';
+
+    const pattern = `(${commentRe})|(${strRe})|(${numRe})|(${decRe})|(${wordRe})|(${opRe})`;
+    const re = new RegExp(pattern, 'g');
+
     let out = '', last = 0, m;
     while ((m = re.exec(code))) {
       out += esc(code.slice(last, m.index));
-      const [c, s, n, p, w] = hash ? [m[1], m[2], m[3], null, m[4]] : [m[1], m[2], m[3], m[4], m[5]];
-      const nextCh = code[m.index + m[0].length];
-      const cls = c ? 'c' : s ? 's' : n ? 'n' : p ? 'k' : w && KW.has(w) ? 'k' : w && nextCh === '(' ? 'f' : '';
-      out += cls ? `<span class="t-${cls}">${esc(m[0])}</span>` : esc(m[0]);
+      const [_, c, s, n, d, w, op] = m;
+      let cls = '';
+      if (c) cls = 't-c';
+      else if (s) cls = 't-s';
+      else if (n) cls = 't-n';
+      else if (d) cls = 't-d';
+      else if (w) {
+        const nextChar = code[m.index + m[0].length];
+        if (LITERALS.has(w)) cls = 't-l';
+        else if (KW.has(w.toLowerCase())) cls = 't-k';
+        else if (nextChar === '(') cls = 't-f';
+        else {
+          const prev = code.slice(0, m.index).trim();
+          if (/(?:def|class|fn|function|struct|interface)\s+$/.test(prev)) cls = 't-def';
+        }
+      } else if (op) {
+        cls = 't-op';
+      }
+      out += cls ? `<span class="${cls}">${esc(m[0])}</span>` : esc(m[0]);
       last = re.lastIndex;
       if (m[0] === '') re.lastIndex++;
     }
@@ -45,8 +73,13 @@ window.md = (() => {
   const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => inline(c.trim()));
 
   function codeBlock(code, lang) {
+    const raw = code.replace(/^\n+|\n+$/g, '');
+    const lines = raw.split('\n');
+    const lineNumbers = lines.length > 1
+      ? `<div class="code-lines" aria-hidden="true">${lines.map((_, i) => `<span>${i + 1}</span>`).join('')}</div>`
+      : '';
     const label = esc((lang || 'código').toUpperCase());
-    return `<div class="code"><div class="code-bar"><span class="code-lang"><span class="code-dots"><i></i><i></i><i></i></span>${label}</span><button type="button" class="copy">📋 Copiar</button></div><pre><code>${highlight(code, lang)}</code></pre></div>`;
+    return `<div class="code" data-lang="${esc(lang || '')}"><div class="code-bar"><span class="code-lang"><span class="code-dots"><i></i><i></i><i></i></span>${label}</span><button type="button" class="copy" title="Copiar código">📋 Copiar</button></div><div class="code-body">${lineNumbers}<pre><code>${highlight(raw, lang)}</code></pre></div></div>`;
   }
 
   function renderList(items) {

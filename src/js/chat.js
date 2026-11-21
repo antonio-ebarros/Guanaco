@@ -516,7 +516,11 @@ export function initChatEvents() {
       await navigator.clipboard.writeText(codeEl.textContent || '');
       const prev = btn.textContent;
       btn.textContent = t('copied');
-      setTimeout(() => { btn.textContent = prev; }, 1400);
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = prev;
+        btn.classList.remove('copied');
+      }, 1600);
     } catch {}
   });
 
