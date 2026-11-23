@@ -100,6 +100,29 @@ function startThinkingTimer(label = 'Pensando') {
   }, 1000);
 }
 
+function closeSourceModal() {
+  const modal = $('#source-modal');
+  if (modal) modal.hidden = true;
+}
+
+export function openSourceModal(sourceObj) {
+  const modal = $('#source-modal');
+  if (!modal || !sourceObj) return;
+  const titleEl = $('#source-modal-title');
+  const secEl = $('#source-modal-section');
+  const snipEl = $('#source-modal-snippet');
+  const file = typeof sourceObj === 'string' ? sourceObj : (sourceObj.file || '');
+  const section = typeof sourceObj === 'string' ? '' : (sourceObj.section || '');
+  const snippet = typeof sourceObj === 'string' ? '' : (sourceObj.snippet || '');
+  if (titleEl) titleEl.textContent = `📄 ${file}`;
+  if (secEl) {
+    secEl.textContent = section;
+    secEl.hidden = !section;
+  }
+  if (snipEl) snipEl.textContent = snippet;
+  modal.hidden = false;
+}
+
 export function renderBubbleSources(el, sources = []) {
   const box = el?.querySelector('.msg-sources');
   if (!box) return;
@@ -111,10 +134,26 @@ export function renderBubbleSources(el, sources = []) {
   box.hidden = false;
   box.innerHTML = `<span class="sources-label">📚 ${t('sourcesConsulted')}:</span>`;
   for (const s of sources) {
-    const tag = document.createElement('span');
-    tag.className = 'msg-source-tag';
-    tag.textContent = s;
-    box.append(tag);
+    if (s && typeof s === 'object' && s.snippet) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'msg-source-tag clickable';
+      btn.title = t('sourceClickHint');
+      btn.append(`📄 ${s.file}`);
+      if (s.section) {
+        const sec = document.createElement('span');
+        sec.className = 'source-sec';
+        sec.textContent = ` · ${s.section}`;
+        btn.append(sec);
+      }
+      btn.onclick = () => openSourceModal(s);
+      box.append(btn);
+    } else {
+      const tag = document.createElement('span');
+      tag.className = 'msg-source-tag';
+      tag.textContent = typeof s === 'string' ? s : (s?.file || '');
+      box.append(tag);
+    }
   }
 }
 
@@ -593,6 +632,26 @@ export function initChatEvents() {
     renderChips();
   };
 
+  $('#btn-close-source')?.addEventListener('click', closeSourceModal);
+  $('#source-modal')?.addEventListener('click', ev => {
+    if (ev.target.id === 'source-modal') closeSourceModal();
+  });
+  window.addEventListener('keydown', ev => {
+    const modal = $('#source-modal');
+    if (ev.key === 'Escape' && modal && !modal.hidden) closeSourceModal();
+  });
+  $('#btn-copy-source')?.addEventListener('click', async () => {
+    const snip = $('#source-modal-snippet')?.textContent || '';
+    const btn = $('#btn-copy-source');
+    if (!snip || !btn) return;
+    try {
+      await navigator.clipboard.writeText(snip);
+      const prev = btn.textContent;
+      btn.textContent = t('copied');
+      setTimeout(() => { btn.textContent = prev; }, 1400);
+    } catch {}
+  });
+
   $('#btn-new-chat').onclick = newConversation;
 
   $('#btn-export-md')?.addEventListener('click', async () => {
@@ -608,7 +667,10 @@ export function initChatEvents() {
       const who = m.role === 'user' ? `## 👤 ${t('you')}` : `## 🦙 ${t('guanaco')}`;
       lines.push(who, '');
       if (Array.isArray(m.sources) && m.sources.length) {
-        lines.push(`*📚 ${t('sourcesConsulted')}: ${m.sources.join(', ')}*`, '');
+        const fmtSources = m.sources.map(s =>
+          typeof s === 'string' ? s : `${s.file}${s.section ? ` (${s.section})` : ''}`
+        );
+        lines.push(`*📚 ${t('sourcesConsulted')}: ${fmtSources.join(', ')}*`, '');
       }
       lines.push(String(m.displayContent ?? m.content ?? '').trim(), '', '---', '');
     }

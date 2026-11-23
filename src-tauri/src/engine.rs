@@ -64,7 +64,7 @@ pub struct ChatEvent {
     pub done: bool,
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sources: Option<Vec<String>>,
+    pub sources: Option<Vec<crate::tools::RagSource>>,
 }
 
 #[derive(Serialize, Clone)]

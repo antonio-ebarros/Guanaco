@@ -1,5 +1,4 @@
-use serde::Serialize;
-use std::collections::BTreeSet;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -7,9 +6,19 @@ use std::process::Command;
 use tauri::AppHandle;
 
 const DOC_EXTENSIONS: &[&str] = &[
-    "pdf", "txt", "md", "markdown", "csv", "json", "toml", "yaml", "yml", "py", "js", "ts", "rs",
-    "html", "css", "log", "xml", "ini", "cfg", "sh", "bat", "c", "cpp", "h", "java", "go", "sql",
+    "pdf", "docx", "odt", "txt", "md", "markdown", "csv", "json", "toml", "yaml", "yml", "py",
+    "js", "ts", "rs", "html", "css", "log", "xml", "ini", "cfg", "sh", "bat", "c", "cpp", "h",
+    "java", "go", "sql",
 ];
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RagSource {
+    pub file: String,
+    pub section: String,
+    pub snippet: String,
+    pub score: usize,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,10 +89,10 @@ fn collect_doc_files(root: &Path, max_depth: usize, max_files: usize) -> Vec<Pat
     out
 }
 
-/// Extrai texto de um arquivo PDF usando `pdftotext` (se instalado) ou fallback nativo em Rust (FlateDecode).
+/// Extrai texto de um arquivo PDF usando `pdftotext` (preservando `\x0C` por página) ou fallback nativo em Rust.
 pub fn extract_pdf_text_from_path(path: &Path) -> Option<String> {
     if let Ok(out) = Command::new("pdftotext")
-        .args(["-q", "-nopgbrk"])
+        .args(["-q"])
         .arg(path)
         .arg("-")
         .output()
@@ -190,6 +199,198 @@ fn extract_pdf_parenthesized_strings(stream: &[u8], out: &mut String) {
     }
 }
 
+fn is_office_doc_file(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?;
+    if ext.eq_ignore_ascii_case("docx") {
+        Some("word/document.xml")
+    } else if ext.eq_ignore_ascii_case("odt") {
+        Some("content.xml")
+    } else {
+        None
+    }
+}
+
+fn le_u16(bytes: &[u8], off: usize) -> Option<u16> {
+    let slice = bytes.get(off..off + 2)?;
+    Some(u16::from_le_bytes([slice[0], slice[1]]))
+}
+
+fn le_u32(bytes: &[u8], off: usize) -> Option<u32> {
+    let slice = bytes.get(off..off + 4)?;
+    Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
+}
+
+fn find_eocd_offset(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 22 {
+        return None;
+    }
+    let min_pos = bytes.len().saturating_sub(65_557);
+    let mut i = bytes.len() - 22;
+    loop {
+        if &bytes[i..i + 4] == b"PK\x05\x06" {
+            return Some(i);
+        }
+        if i == min_pos {
+            break;
+        }
+        i -= 1;
+    }
+    None
+}
+
+pub fn read_zip_entry_bytes(bytes: &[u8], target_entry: &str) -> Option<Vec<u8>> {
+    let mut pos = find_eocd_offset(bytes)
+        .and_then(|eocd| le_u32(bytes, eocd + 16).map(|v| v as usize))
+        .unwrap_or(0);
+
+    if bytes.get(pos..pos + 4) != Some(b"PK\x01\x02") {
+        pos = find_subslice(bytes, b"PK\x01\x02")?;
+    }
+
+    while bytes.get(pos..pos + 4) == Some(b"PK\x01\x02") {
+        let method = le_u16(bytes, pos + 10)?;
+        let comp_size = le_u32(bytes, pos + 20)? as usize;
+        let fname_len = le_u16(bytes, pos + 28)? as usize;
+        let extra_len = le_u16(bytes, pos + 30)? as usize;
+        let comment_len = le_u16(bytes, pos + 32)? as usize;
+        let local_off = le_u32(bytes, pos + 42)? as usize;
+        let name_end = pos + 46 + fname_len;
+        let name_bytes = bytes.get(pos + 46..name_end)?;
+        let entry_name = std::str::from_utf8(name_bytes).unwrap_or("");
+
+        if entry_name == target_entry {
+            if bytes.get(local_off..local_off + 4) != Some(b"PK\x03\x04") {
+                return None;
+            }
+            let lfh_fname = le_u16(bytes, local_off + 26)? as usize;
+            let lfh_extra = le_u16(bytes, local_off + 28)? as usize;
+            let data_start = local_off + 30 + lfh_fname + lfh_extra;
+            let data_end = data_start.checked_add(comp_size)?;
+            let raw_data = bytes.get(data_start..data_end)?;
+            if method == 0 {
+                return Some(raw_data.to_vec());
+            } else if method == 8 {
+                let mut out = Vec::new();
+                let mut dec = flate2::read::DeflateDecoder::new(raw_data);
+                dec.read_to_end(&mut out).ok()?;
+                return Some(out);
+            }
+            return None;
+        }
+
+        let step = 46 + fname_len + extra_len + comment_len;
+        if step == 0 {
+            break;
+        }
+        pos += step;
+    }
+    None
+}
+
+pub fn strip_office_xml_tags(xml: &str) -> String {
+    let mut out = String::with_capacity(xml.len() / 3);
+    let mut chars = xml.chars().peekable();
+    let mut in_tag = false;
+    let mut tag_buf = String::new();
+
+    while let Some(ch) = chars.next() {
+        if ch == '<' {
+            in_tag = true;
+            tag_buf.clear();
+            continue;
+        }
+        if in_tag {
+            if ch == '>' {
+                in_tag = false;
+                let tag = tag_buf.trim();
+                if tag == "/w:p"
+                    || tag == "/text:p"
+                    || tag == "/text:h"
+                    || tag == "/w:tr"
+                    || tag.starts_with("w:br")
+                    || tag.starts_with("text:line-break")
+                    || tag.starts_with("w:cr")
+                {
+                    if !out.ends_with("\n\n") {
+                        out.push('\n');
+                    }
+                    if tag.starts_with('/') && !out.ends_with("\n\n") {
+                        out.push('\n');
+                    }
+                } else if tag.starts_with("w:tab") || tag.starts_with("text:tab") {
+                    out.push('\t');
+                }
+            } else {
+                tag_buf.push(ch);
+            }
+            continue;
+        }
+        if ch == '&' {
+            let mut entity = String::new();
+            let mut found_semi = false;
+            for _ in 0..8 {
+                if let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next == ';' {
+                        found_semi = true;
+                        break;
+                    }
+                    entity.push(next);
+                } else {
+                    break;
+                }
+            }
+            if found_semi {
+                match entity.as_str() {
+                    "amp" => out.push('&'),
+                    "lt" => out.push('<'),
+                    "gt" => out.push('>'),
+                    "quot" => out.push('"'),
+                    "apos" => out.push('\''),
+                    _ if entity.starts_with('#') => {
+                        let code_opt = if let Some(hex) = entity.strip_prefix("#x") {
+                            u32::from_str_radix(hex, 16).ok()
+                        } else {
+                            entity[1..].parse::<u32>().ok()
+                        };
+                        if let Some(c) = code_opt.and_then(char::from_u32) {
+                            out.push(c);
+                        }
+                    }
+                    _ => {
+                        out.push('&');
+                        out.push_str(&entity);
+                        out.push(';');
+                    }
+                }
+            } else {
+                out.push('&');
+                out.push_str(&entity);
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+
+    let cleaned_lines: Vec<String> = out
+        .lines()
+        .map(|l| l.trim().to_string())
+        .collect();
+    cleaned_lines.join("\n").trim().to_string()
+}
+
+pub fn extract_office_xml_text(path: &Path, target_xml: &str) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let xml_bytes = read_zip_entry_bytes(&bytes, target_xml)?;
+    let xml = String::from_utf8_lossy(&xml_bytes);
+    let text = strip_office_xml_tags(&xml);
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 fn read_document_text(path: &Path) -> Option<String> {
     let meta = fs::metadata(path).ok()?;
     if is_pdf_file(path) {
@@ -197,6 +398,11 @@ fn read_document_text(path: &Path) -> Option<String> {
             return None;
         }
         extract_pdf_text_from_path(path)
+    } else if let Some(target_xml) = is_office_doc_file(path) {
+        if meta.len() > 25_000_000 {
+            return None;
+        }
+        extract_office_xml_text(path, target_xml)
     } else {
         if meta.len() > 600_000 {
             return None;
@@ -556,7 +762,151 @@ fn eval_expr(s: &str) -> Option<f64> {
     }
 }
 
-pub fn search_knowledge_folder(folder_raw: &str, query: &str) -> Option<(String, Vec<String>)> {
+pub fn normalize_for_search(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        for lc in ch.to_lowercase() {
+            let mapped = match lc {
+                'á' | 'à' | 'ã' | 'â' | 'ä' => 'a',
+                'é' | 'è' | 'ê' | 'ë' => 'e',
+                'í' | 'ì' | 'î' | 'ï' => 'i',
+                'ó' | 'ò' | 'õ' | 'ô' | 'ö' => 'o',
+                'ú' | 'ù' | 'û' | 'ü' => 'u',
+                'ç' => 'c',
+                'ñ' => 'n',
+                _ => lc,
+            };
+            out.push(mapped);
+        }
+    }
+    out
+}
+
+fn split_text_chunks(text: &str, max_chars: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut buf = String::new();
+    for para in text.split("\n\n") {
+        let p = para.trim();
+        if p.is_empty() {
+            continue;
+        }
+        if !buf.is_empty() && buf.chars().count() + p.chars().count() + 2 > max_chars {
+            chunks.push(std::mem::take(&mut buf));
+        }
+        if p.chars().count() > max_chars {
+            if !buf.is_empty() {
+                chunks.push(std::mem::take(&mut buf));
+            }
+            let mut cur = String::new();
+            for line in p.lines() {
+                if !cur.is_empty() && cur.chars().count() + line.chars().count() + 1 > max_chars {
+                    chunks.push(std::mem::take(&mut cur));
+                }
+                if !cur.is_empty() {
+                    cur.push('\n');
+                }
+                cur.push_str(line);
+            }
+            if !cur.is_empty() {
+                chunks.push(cur);
+            }
+        } else {
+            if !buf.is_empty() {
+                buf.push_str("\n\n");
+            }
+            buf.push_str(p);
+        }
+    }
+    if !buf.is_empty() {
+        chunks.push(buf);
+    }
+    chunks
+}
+
+pub fn extract_document_chunks(content: &str, is_pdf: bool) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if is_pdf && content.contains('\x0C') {
+        for (idx, page_raw) in content.split('\x0C').enumerate() {
+            let trimmed = page_raw.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let label = format!("Pág. {}", idx + 1);
+            for chunk in split_text_chunks(trimmed, 680) {
+                out.push((label.clone(), chunk));
+            }
+        }
+        return out;
+    }
+
+    let mut current_heading: Option<String> = None;
+    let mut buf = String::new();
+    let mut start_line = 1usize;
+    let mut last_line = 1usize;
+
+    let flush = |buf: &mut String,
+                 start_l: usize,
+                 end_l: usize,
+                 heading: &Option<String>,
+                 out: &mut Vec<(String, String)>| {
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            let section = heading
+                .clone()
+                .unwrap_or_else(|| format!("Linhas {start_l}–{end_l}"));
+            out.push((section, trimmed.to_string()));
+        }
+        buf.clear();
+    };
+
+    for (idx, raw_line) in content.lines().enumerate() {
+        let line_no = idx + 1;
+        let trimmed = raw_line.trim();
+        let is_heading = (trimmed.starts_with("# ")
+            || trimmed.starts_with("## ")
+            || trimmed.starts_with("### ")
+            || trimmed.starts_with("#### "))
+            && trimmed.len() > 2;
+
+        if is_heading {
+            flush(&mut buf, start_line, last_line, &current_heading, &mut out);
+            let clean_h = trimmed.trim_start_matches('#').trim();
+            let short_h: String = clean_h.chars().take(48).collect();
+            current_heading = Some(format!("Seção: {short_h}"));
+            start_line = line_no;
+            buf.push_str(raw_line);
+            last_line = line_no;
+            continue;
+        }
+
+        if trimmed.is_empty() {
+            if buf.chars().count() >= 380 {
+                flush(&mut buf, start_line, last_line, &current_heading, &mut out);
+                start_line = line_no + 1;
+            } else if !buf.is_empty() && !buf.ends_with("\n\n") {
+                buf.push('\n');
+            }
+            continue;
+        }
+
+        if buf.is_empty() {
+            start_line = line_no;
+        } else {
+            buf.push('\n');
+        }
+        buf.push_str(raw_line);
+        last_line = line_no;
+
+        if buf.chars().count() >= 680 {
+            flush(&mut buf, start_line, last_line, &current_heading, &mut out);
+            start_line = line_no + 1;
+        }
+    }
+    flush(&mut buf, start_line, last_line, &current_heading, &mut out);
+    out
+}
+
+pub fn search_knowledge_folder(folder_raw: &str, query: &str) -> Option<(String, Vec<RagSource>)> {
     let root = expand_home(folder_raw);
     if !root.is_dir() {
         return None;
@@ -566,14 +916,13 @@ pub fn search_knowledge_folder(folder_raw: &str, query: &str) -> Option<(String,
         return None;
     }
 
-    let keywords: Vec<String> = query
-        .to_lowercase()
+    let keywords: Vec<String> = normalize_for_search(query)
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| w.chars().count() >= 3)
         .map(String::from)
         .collect();
 
-    let mut scored_chunks: Vec<(usize, String, String)> = Vec::new();
+    let mut scored: Vec<RagSource> = Vec::new();
 
     for file_path in &files {
         let Some(content) = read_document_text(file_path) else {
@@ -584,45 +933,65 @@ pub fn search_knowledge_folder(folder_raw: &str, query: &str) -> Option<(String,
             .unwrap_or(file_path)
             .to_string_lossy()
             .to_string();
-        let rel_lower = rel_name.to_lowercase();
+        let rel_norm = normalize_for_search(&rel_name);
+        let chunks = extract_document_chunks(&content, is_pdf_file(file_path));
 
-        for para in content.split("\n\n") {
-            let trimmed = para.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let lower = trimmed.to_lowercase();
+        for (section, chunk_text) in chunks {
+            let chunk_norm = normalize_for_search(&chunk_text);
+            let sec_norm = normalize_for_search(&section);
             let mut score = 0usize;
+            let mut distinct = 0usize;
+
             for kw in &keywords {
-                if rel_lower.contains(kw) {
+                let mut hit = false;
+                if rel_norm.contains(kw) {
                     score += 4;
+                    hit = true;
                 }
-                if lower.contains(kw) {
-                    score += 3;
+                if sec_norm.contains(kw) {
+                    score += 5;
+                    hit = true;
+                }
+                let matches_in_body = chunk_norm.match_indices(kw).take(3).count();
+                if matches_in_body > 0 {
+                    score += 3 + (matches_in_body.saturating_sub(1)) * 2;
+                    hit = true;
+                }
+                if hit {
+                    distinct += 1;
                 }
             }
-            if score > 0 || (keywords.is_empty() && scored_chunks.len() < 2) {
-                let snippet: String = trimmed.chars().take(700).collect();
-                scored_chunks.push((score.max(1), rel_name.clone(), snippet));
+            if distinct >= 2 {
+                score += distinct * 5;
+            }
+            if score > 0 || (keywords.is_empty() && scored.len() < 2) {
+                let snippet: String = chunk_text.chars().take(720).collect();
+                scored.push(RagSource {
+                    file: rel_name.clone(),
+                    section,
+                    snippet,
+                    score: score.max(1),
+                });
             }
         }
     }
 
-    scored_chunks.sort_by(|a, b| b.0.cmp(&a.0));
-    if scored_chunks.is_empty() {
+    scored.sort_by(|a, b| b.score.cmp(&a.score));
+    if scored.is_empty() {
         return None;
     }
 
+    let top: Vec<RagSource> = scored.into_iter().take(5).collect();
     let mut out = String::from(
-        "Trechos relevantes encontrados nos documentos e PDFs locais do usuário:\n",
+        "Trechos relevantes encontrados nos documentos locais do usuário (RAG 2.0):\n",
     );
-    let mut sources_set = BTreeSet::new();
-    for (_, file_rel, snippet) in scored_chunks.into_iter().take(4) {
-        sources_set.insert(file_rel.clone());
-        out.push_str(&format!("\n--- [Fonte: {file_rel}] ---\n{snippet}\n"));
+    for src in &top {
+        out.push_str(&format!(
+            "\n--- [Fonte: {} ({})] ---\n{}\n",
+            src.file, src.section, src.snippet
+        ));
     }
-    let sources: Vec<String> = sources_set.into_iter().collect();
-    Some((out, sources))
+    Some((out, top))
 }
 
 fn local_datetime_string() -> String {
@@ -647,7 +1016,7 @@ pub fn build_tools_augmentation(
     last_user_query: &str,
     pro_active: bool,
     knowledge_folder: Option<&str>,
-) -> (Option<String>, Vec<String>) {
+) -> (Option<String>, Vec<RagSource>) {
     let mut blocks = Vec::new();
     let mut matched_sources = Vec::new();
 
@@ -696,5 +1065,33 @@ mod tests {
             try_eval_math_in_text("Quanto é (1250 * 4) + 350 / 2 no total?").expect("deve calcular");
         assert_eq!(expr, "(1250 * 4) + 350 / 2");
         assert!((val - 5175.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn normalizes_portuguese_accents() {
+        assert_eq!(normalize_for_search("Configuração & Código Ção"), "configuracao & codigo cao");
+    }
+
+    #[test]
+    fn strips_docx_and_odt_xml_cleanly() {
+        let xml = r#"<w:document><w:body><w:p><w:r><w:t>Olá &amp; bem-vindo</w:t></w:r></w:p><w:p><w:r><w:t>Segunda linha</w:t></w:r></w:p></w:body></w:document>"#;
+        let text = strip_office_xml_tags(xml);
+        assert!(text.contains("Olá & bem-vindo"));
+        assert!(text.contains("Segunda linha"));
+    }
+
+    #[test]
+    fn extracts_chunks_with_markdown_sections_and_pdf_pages() {
+        let md = "# Visão Geral\nTexto introdutório\n\n## Código Secreto\nA senha é ALPHA-99";
+        let md_chunks = extract_document_chunks(md, false);
+        assert_eq!(md_chunks.len(), 2);
+        assert_eq!(md_chunks[0].0, "Seção: Visão Geral");
+        assert_eq!(md_chunks[1].0, "Seção: Código Secreto");
+
+        let pdf = "Conteúdo página um\x0CConteúdo página dois";
+        let pdf_chunks = extract_document_chunks(pdf, true);
+        assert_eq!(pdf_chunks.len(), 2);
+        assert_eq!(pdf_chunks[0].0, "Pág. 1");
+        assert_eq!(pdf_chunks[1].0, "Pág. 2");
     }
 }

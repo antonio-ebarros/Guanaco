@@ -81,6 +81,7 @@
             <button id="btn-send" class="btn-primary" type="submit" data-i18n="send">Enviar</button>
           </div>
         </div>
+        <div class="ai-disclaimer" data-i18n="aiDisclaimer">Modelos locais podem cometer erros. Verifique informações importantes.</div>
         <input id="file-input" type="file" multiple hidden accept="image/*,text/*,.md,.json,.csv,.py,.js,.ts,.rs,.html,.css,.log">
       </form>
     </section>
@@ -181,6 +182,21 @@
         <span>github.com/antonio-ebarros/Guanaco</span>
       </a>
       <div class="about-credits" data-i18n="aboutCredits">Licença Apache-2.0 · Voz PT-BR: Edresson Casanova (CC BY 4.0)</div>
+    </div>
+  </div>
+
+  <!-- MODAL TRECHO DA FONTE CONSULTADA (RAG 2.0) -->
+  <div id="source-modal" class="modal-overlay" hidden>
+    <div class="about-card source-modal-card" role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
+      <button id="btn-close-source" class="about-close" type="button" aria-label="Fechar">×</button>
+      <div class="card-kicker" data-i18n="sourceModalKicker">TRECHO CONSULTADO NA SUA PASTA LOCAL</div>
+      <h2 id="source-modal-title" class="source-modal-title">📄 documento.md</h2>
+      <div id="source-modal-section" class="source-modal-badge">Seção</div>
+      <pre id="source-modal-snippet" class="source-modal-snippet"></pre>
+      <div class="row-between" style="width:100%;margin-top:6px;">
+        <span class="muted" style="font-size:11.5px;" data-i18n="sourceModalHint">Extraído 100% offline dos seus documentos locais</span>
+        <button id="btn-copy-source" class="btn-ghost small" type="button" data-i18n="copy">📋 Copiar</button>
+      </div>
     </div>
   </div>
 
