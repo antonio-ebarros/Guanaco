@@ -147,9 +147,60 @@ pub fn default_models_dir() -> String {
     "~/.ollama/models".to_string()
 }
 
+fn is_ollama_port_bound() -> bool {
+    let Ok(addr) = "127.0.0.1:11434".parse() else {
+        return false;
+    };
+    std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(250)).is_ok()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn nvidia_driver_major() -> Option<u32> {
+    let out = Command::new("nvidia-smi")
+        .args(["--query-gpu=driver_version", "--format=csv,noheader"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let txt = String::from_utf8_lossy(&out.stdout);
+    let major_str = txt.trim().split('.').next()?.trim();
+    major_str.parse::<u32>().ok()
+}
+
+fn configure_ollama_env(cmd: &mut Command, app: &AppHandle) {
+    cmd.env("OLLAMA_NO_CLOUD", "1");
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(eng) = engine_dir(app) {
+            let lib_dir = eng.join("lib").join("ollama");
+            if lib_dir.is_dir() {
+                let prev = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                let joined = if prev.is_empty() {
+                    lib_dir.to_string_lossy().to_string()
+                } else {
+                    format!("{}:{prev}", lib_dir.to_string_lossy())
+                };
+                cmd.env("LD_LIBRARY_PATH", joined);
+                if lib_dir.join("vulkan").is_dir()
+                    && nvidia_driver_major().map(|v| v < 570).unwrap_or(false)
+                {
+                    cmd.env("OLLAMA_LLM_LIBRARY", "vulkan");
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+}
+
 pub async fn is_ollama_up() -> bool {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(1200))
+        .timeout(std::time::Duration::from_millis(3000))
         .build()
         .ok();
     let Some(c) = client else { return false };
@@ -164,35 +215,26 @@ pub async fn start_ollama_impl(app: &AppHandle, state: &AppState) -> Result<bool
     if is_ollama_up().await {
         return Ok(true);
     }
-    let bin = find_ollama_binary(app).ok_or("Ollama não encontrado neste computador.")?;
-    let mut cmd = Command::new(&bin);
-    cmd.arg("serve");
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Some(eng) = engine_dir(app) {
-            let lib_dir = eng.join("lib").join("ollama");
-            if lib_dir.is_dir() {
-                let prev = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-                let joined = if prev.is_empty() {
-                    lib_dir.to_string_lossy().to_string()
-                } else {
-                    format!("{}:{prev}", lib_dir.to_string_lossy())
-                };
-                cmd.env("LD_LIBRARY_PATH", joined);
-            }
+
+    let child_alive = state
+        .ollama_child
+        .lock()
+        .ok()
+        .and_then(|mut g| g.as_mut().map(|c| matches!(c.try_wait(), Ok(None))))
+        .unwrap_or(false);
+
+    if !child_alive && !is_ollama_port_bound() {
+        let bin = find_ollama_binary(app).ok_or("Ollama não encontrado neste computador.")?;
+        let mut cmd = Command::new(&bin);
+        cmd.arg("serve");
+        configure_ollama_env(&mut cmd, app);
+        let child = cmd.spawn().map_err(|e| format!("Falha ao iniciar Ollama: {e}"))?;
+        if let Ok(mut guard) = state.ollama_child.lock() {
+            *guard = Some(child);
         }
     }
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let child = cmd.spawn().map_err(|e| format!("Falha ao iniciar Ollama: {e}"))?;
-    if let Ok(mut guard) = state.ollama_child.lock() {
-        *guard = Some(child);
-    }
 
-    for _ in 0..25 {
+    for _ in 0..40 {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         if is_ollama_up().await {
             return Ok(true);
@@ -627,12 +669,16 @@ pub async fn chat_stream_impl(
         "options": options
     });
 
+    if !is_ollama_up().await {
+        start_ollama_impl(app, state).await?;
+    }
+
     let send_fut = client
         .post(format!("{OLLAMA_URL}/api/chat"))
         .json(&payload)
         .send();
 
-    let mut resp = tokio::select! {
+    let first_try = tokio::select! {
         _ = rx.changed() => {
             let _ = app.emit("chat-event", ChatEvent {
                 conv_id: req.conv_id,
@@ -643,7 +689,32 @@ pub async fn chat_stream_impl(
             });
             return Ok(());
         }
-        r = send_fut => r.map_err(|e| e.to_string())?,
+        r = send_fut => r,
+    };
+
+    let mut resp = match first_try {
+        Ok(r) => r,
+        Err(e) if e.is_connect() => {
+            let _ = start_ollama_impl(app, state).await;
+            let retry_fut = client
+                .post(format!("{OLLAMA_URL}/api/chat"))
+                .json(&payload)
+                .send();
+            tokio::select! {
+                _ = rx.changed() => {
+                    let _ = app.emit("chat-event", ChatEvent {
+                        conv_id: req.conv_id,
+                        delta: String::new(),
+                        done: true,
+                        error: None,
+                        sources: None,
+                    });
+                    return Ok(());
+                }
+                r = retry_fut => r.map_err(|err| err.to_string())?,
+            }
+        }
+        Err(e) => return Err(e.to_string()),
     };
 
     // Auto-fallback inteligente: se o usuário forçou 100% GPU (num_gpu > 0) ou contexto alto
