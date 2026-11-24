@@ -6,6 +6,7 @@ mod ollama;
 mod storage;
 mod tools;
 mod tts;
+mod updater;
 
 use tauri::{Manager, WindowEvent};
 
@@ -44,7 +45,8 @@ pub fn run() {
             tools::export_conversation_markdown,
             llamafile::get_engine_config,
             llamafile::set_engine_config,
-            llamafile::pick_llamafile
+            llamafile::pick_llamafile,
+            updater::check_app_update
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Guanaco");

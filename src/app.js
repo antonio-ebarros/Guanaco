@@ -1,4 +1,4 @@
-import { $, $$, fmtGb, listen, state, switchView } from './js/state.js';
+import { $, $$, fmtGb, invoke, listen, state, switchView } from './js/state.js';
 import { initPreferences } from './js/theme.js';
 import { initProChatHeader, loadLicenseStatus, renderChatPersonaSelect } from './js/pro.js';
 import { t } from './js/i18n.js';
@@ -47,6 +47,43 @@ $('#about-modal')?.addEventListener('click', ev => {
 window.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') closeAboutModal();
 });
+
+async function checkForUpdates(manual = false) {
+  const statusEl = $('#about-update-status');
+  const linkEl = $('#about-update-link');
+  const btnAbout = $('#btn-about');
+  if (manual && statusEl) {
+    statusEl.hidden = false;
+    statusEl.textContent = t('aboutCheckingUpdate');
+  }
+  if (linkEl) linkEl.hidden = true;
+
+  try {
+    const info = await invoke('check_app_update');
+    if (info?.hasUpdate) {
+      btnAbout?.classList.add('btn-has-update');
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = `${t('aboutUpdateFound')} v${info.latestVersion}`;
+      }
+      if (linkEl) {
+        linkEl.href = info.downloadUrl || info.releaseUrl;
+        linkEl.textContent = `⬇ ${t('aboutDownloadUpdate')} (v${info.latestVersion})`;
+        linkEl.hidden = false;
+      }
+    } else if (manual && statusEl) {
+      statusEl.hidden = false;
+      statusEl.textContent = `${t('aboutUpToDate')} (v${info?.currentVersion || '1.0.0'})`;
+    }
+  } catch {
+    if (manual && statusEl) {
+      statusEl.hidden = false;
+      statusEl.textContent = t('aboutUpdateErr');
+    }
+  }
+}
+
+$('#btn-check-update')?.addEventListener('click', () => checkForUpdates(true));
 
 listen('pull-progress', ev => {
   const p = ev.payload;
@@ -134,3 +171,4 @@ initProChatHeader(refreshControl);
 initModelsEvents();
 initChatEvents();
 loadLicenseStatus().then(() => bootstrap()).then(loadConversations);
+setTimeout(() => checkForUpdates(false), 2500);

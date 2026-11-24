@@ -3,6 +3,8 @@ import { renderProfilePill } from './theme.js';
 import { t } from './i18n.js';
 
 const STORAGE_KEY = 'guanaco-pro-settings';
+// URL oficial do checkout automático (Cloudflare Worker + Mercado Pago Checkout Pro)
+const GUANACO_PRO_CHECKOUT_URL = 'https://guanaco-license-webhook.guanaco-ia.workers.dev/comprar';
 
 export const BUILTIN_PERSONAS = [
   {
@@ -236,6 +238,10 @@ export function renderProControlSection(onLicenseChanged) {
         <div class="pro-highlight-item"><strong>${t('proFeat2Title')}</strong><span class="muted">${t('proFeat2Desc')}</span></div>
         <div class="pro-highlight-item"><strong>${t('proFeat3Title')}</strong><span class="muted">${t('proFeat3Desc')}</span></div>
         <div class="pro-highlight-item"><strong>${t('proFeat4Title')}</strong><span class="muted">${t('proFeat4Desc')}</span></div>
+      </div>
+      <div class="pro-buy-row">
+        <a class="pro-buy-btn" href="${GUANACO_PRO_CHECKOUT_URL}" target="_blank" rel="noopener noreferrer">✨ ${t('proBuyBtn')}</a>
+        <span class="muted pro-buy-hint">${t('proBuyHint')}</span>
       </div>
       <form id="pro-activate-form" class="inline-form" style="margin-top:6px;">
         <input id="pro-key-input" type="text" placeholder="GUANACO-PRO-..." autocomplete="off" spellcheck="false">

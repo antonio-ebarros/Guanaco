@@ -2,12 +2,23 @@
 
 **Gerenciador de Inteligência Artificial local com interface de conversa integrada**, pensado para pessoas comuns testarem modelos de IA no próprio computador sem depender de terminal, Docker ou configurações técnicas.
 
-## Diferenciais
+## Por que escolher o Guanaco?
 
-- **Simplicidade ("clicou, baixou, conversou"):** recomenda modelos compatíveis com a memória RAM e GPU do seu PC, com tamanho em GB claro antes do download.
-- **Privacidade e Controle:** tudo roda localmente na sua máquina, com transparência sobre o que está rodando, quanto de memória RAM/VRAM está sendo usado, onde os arquivos ficam salvos e botão de **1 clique para liberar memória**.
-- **Editor Markdown ao vivo:** escreva prompts estruturados com formatação instantânea (`#` título, `-` lista, `>` citação, `**negrito**`, `` `código` ``).
-- **Multiplataforma:** empacotado com **Tauri v2** para **Windows** (`.exe` / `.msi`) e **Linux** (`.AppImage` / `.deb`).
+- **Ultraleve de verdade (Tauri + Rust):** ao contrário de clientes baseados em Electron/Chromium que consomem centenas de MB/GB de RAM só para abrir a janela, o Guanaco usa interface nativa leve para sobrar mais memória RAM e VRAM para o modelo de IA.
+- **Simplicidade ("clicou, baixou, conversou"):** instala o motor local em 1 clique e recomenda modelos compatíveis com a memória RAM e GPU do seu PC, com tamanho em GB claro antes do download.
+- **Proteção para PCs reais:** detecção realista de RAM/VRAM livre, reserva do sistema operacional, perfis **Conservador / Equilibrado** para não travar o computador e botão de **1 clique para liberar memória**.
+- **Voz neural offline e Markdown ao vivo:** leitura em voz alta offline via **Piper TTS** (PT-BR, EN e ZH) e editor Markdown com formatação instantânea.
+- **Privacidade absoluta:** 100% offline, sem conta, sem login e sem telemetria.
+- **Multiplataforma:** empacotado com **Tauri v2** para **Windows** (`.exe` / `.msi`) e **Linux** (`.AppImage` / `.deb`), com verificador de atualizações integrado no aplicativo.
+
+## Guanaco Pro (R$ 39 · Vitalício) — Apoie o projeto
+
+O Guanaco é gratuito e de código aberto (Apache-2.0). Se quiser desbloquear recursos avançados **e apoiar o desenvolvimento independente do projeto**, você pode adquirir o **Guanaco Pro** com **pagamento único de R$ 39** (sem mensalidade e com ativação 100% offline via chave Ed25519):
+
+- **Perfil Livre (`🔓 Livre`)** e **Parâmetros Avançados** (`temperature`, `top_p`, `repeat_penalty`, `num_ctx`, `num_gpu`).
+- **Personalidades e System Prompt editável** para criar assistentes especializados.
+- **Pasta de Conhecimento Local (RAG Offline):** converse com seus PDFs, DOCX, ODT e textos com citação das fontes.
+- **Importador de modelos `.GGUF` locais** e suporte multi-motor (**Ollama** + **llamafile**).
 
 ## Estrutura do Projeto
 
