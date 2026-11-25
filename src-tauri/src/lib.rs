@@ -10,6 +10,42 @@ mod updater;
 
 use tauri::{Manager, WindowEvent};
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("https://")
+        || trimmed.starts_with("http://")
+        || trimmed.starts_with("mailto:"))
+    {
+        return Err("URL inválida para abertura externa.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("rundll32");
+        c.args(["url.dll,FileProtocolHandler", trimmed]);
+        c
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg(trimmed);
+        c
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(trimmed);
+        c
+    };
+
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Não foi possível abrir o navegador: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -46,7 +82,8 @@ pub fn run() {
             llamafile::get_engine_config,
             llamafile::set_engine_config,
             llamafile::pick_llamafile,
-            updater::check_app_update
+            updater::check_app_update,
+            open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Guanaco");

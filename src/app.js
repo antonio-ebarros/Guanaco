@@ -48,6 +48,16 @@ window.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') closeAboutModal();
 });
 
+document.addEventListener('click', ev => {
+  const link = ev.target?.closest?.('a[href]');
+  if (!link) return;
+  const href = link.getAttribute('href') || '';
+  if (/^(https?:\/\/|mailto:)/i.test(href)) {
+    ev.preventDefault();
+    invoke('open_external_url', { url: href }).catch(() => {});
+  }
+});
+
 async function checkForUpdates(manual = false) {
   const statusEl = $('#about-update-status');
   const linkEl = $('#about-update-link');
