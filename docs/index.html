@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guanaco — IA Local Leve, Privada e Sem Complicação</title>
+  <meta name="description" content="Rode modelos de IA 100% offline no seu PC sem terminal, sem Docker e sem desperdiçar RAM. Feito em Rust/Tauri para Windows e Linux.">
+  <link rel="icon" type="image/png" href="guanaco-logo.png">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef2f6;
+      --bg-grad: radial-gradient(circle at 18% 12%, rgba(0, 212, 230, 0.14), transparent 45%),
+                 radial-gradient(circle at 85% 88%, rgba(234, 134, 70, 0.10), transparent 45%),
+                 linear-gradient(180deg, #f5f7fa 0%, #e7edf3 100%);
+      --card: rgba(255, 255, 255, 0.82);
+      --glass: rgba(255, 255, 255, 0.68);
+      --line: rgba(15, 23, 42, 0.10);
+      --text: #111827;
+      --dim: #525d6d;
+      --accent: #00a8c2;
+      --accent-strong: #008ca3;
+      --accent-soft: rgba(0, 168, 194, 0.12);
+      --pro: #d97706;
+      --pro-soft: rgba(245, 158, 11, 0.13);
+      --pro-border: rgba(245, 158, 11, 0.42);
+      --shadow: 0 12px 34px rgba(15, 23, 42, 0.08);
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0d1218;
+      --bg-grad: radial-gradient(circle at 18% 12%, rgba(0, 212, 230, 0.11), transparent 45%),
+                 radial-gradient(circle at 85% 88%, rgba(245, 158, 11, 0.09), transparent 45%),
+                 linear-gradient(180deg, #0d1218 0%, #111923 100%);
+      --card: rgba(22, 30, 41, 0.82);
+      --glass: rgba(22, 30, 41, 0.65);
+      --line: rgba(255, 255, 255, 0.09);
+      --text: #f1f5f9;
+      --dim: #94a3b8;
+      --accent: #00c4e0;
+      --accent-strong: #00a8c2;
+      --accent-soft: rgba(0, 196, 224, 0.14);
+      --pro: #fbbf24;
+      --pro-soft: rgba(245, 158, 11, 0.14);
+      --pro-border: rgba(245, 158, 11, 0.45);
+      --shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      background-image: var(--bg-grad);
+      background-attachment: fixed;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      background: var(--glass);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      height: 64px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 18px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .brand img {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .nav-links a {
+      color: var(--dim);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .theme-btn {
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .hero {
+      padding: 64px 0 42px;
+      text-align: center;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      border: 1px solid rgba(0, 168, 194, 0.28);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 18px;
+    }
+    [data-theme="dark"] .pill { color: var(--accent); }
+    h1 {
+      margin: 0 auto 16px;
+      max-width: 780px;
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+    .hero-sub {
+      margin: 0 auto 28px;
+      max-width: 640px;
+      font-size: clamp(16px, 2.2vw, 19px);
+      color: var(--dim);
+    }
+
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 22px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: transform 0.12s ease, filter 0.15s ease, border-color 0.15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 8px 22px rgba(0, 168, 194, 0.28);
+    }
+    .btn-primary:hover { filter: brightness(1.06); }
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .btn-secondary:hover { border-color: var(--accent); }
+    .btn-pro {
+      background: #f59e0b;
+      color: #0f172a;
+      box-shadow: 0 8px 22px rgba(245, 158, 11, 0.25);
+    }
+    .btn-pro:hover { filter: brightness(1.07); }
+    .hero-meta {
+      font-size: 13px;
+      color: var(--dim);
+    }
+    .hero-meta a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    section { padding: 42px 0; }
+    .sec-head {
+      text-align: center;
+      max-width: 640px;
+      margin: 0 auto 28px;
+    }
+    .sec-head h2 {
+      margin: 0 0 8px;
+      font-size: clamp(24px, 3.5vw, 32px);
+      letter-spacing: -0.01em;
+    }
+    .sec-head p {
+      margin: 0;
+      color: var(--dim);
+      font-size: 15.5px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .card-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+    .card p {
+      margin: 0;
+      color: var(--dim);
+      font-size: 14.5px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14.5px;
+      text-align: left;
+    }
+    th, td {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      font-weight: 700;
+      background: var(--accent-soft);
+    }
+    tr:last-child td { border-bottom: none; }
+    .ok { color: #10b981; font-weight: 700; }
+    .mid { color: var(--dim); }
+
+    .pro-box {
+      background: linear-gradient(180deg, var(--pro-soft) 0%, var(--card) 100%);
+      border: 1px solid var(--pro-border);
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: var(--shadow);
+    }
+    .pro-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .pro-badge {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: var(--pro-soft);
+      border: 1px solid var(--pro-border);
+      color: var(--pro);
+      font-size: 12.5px;
+      font-weight: 800;
+    }
+    .pro-price {
+      font-size: 28px;
+      font-weight: 800;
+    }
+    .pro-price span {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--dim);
+    }
+    .pro-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 10px 18px;
+      margin: 18px 0 24px;
+      padding: 0;
+      list-style: none;
+      font-size: 14.5px;
+    }
+    .pro-list li::before {
+      content: "✓ ";
+      color: var(--pro);
+      font-weight: 800;
+    }
+
+    footer {
+      padding: 34px 0 44px;
+      text-align: center;
+      color: var(--dim);
+      font-size: 13.5px;
+      border-top: 1px solid var(--line);
+      margin-top: 24px;
+    }
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    @media (max-width: 680px) {
+      .nav-links { display: none; }
+      .pro-box { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="#">
+        <img src="guanaco-logo.png" alt="Guanaco">
+        <span>Guanaco</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#diferenciais">Diferenciais</a>
+        <a href="#comparativo">Comparativo</a>
+        <a href="#pro">Guanaco Pro</a>
+        <a href="https://github.com/antonio-ebarros/Guanaco" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+      <button id="theme-toggle" class="theme-btn" type="button">🌙 Escuro</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div class="pill" id="version-pill">✨ v1.0.0 · 100% Offline e Código Aberto (Apache-2.0)</div>
+      <h1>Inteligência Artificial no seu PC — leve, privada e sem complicação.</h1>
+      <p class="hero-sub">
+        Rode modelos de IA localmente sem terminal, sem Docker, sem conta e sem desperdiçar a memória RAM do seu computador com interfaces pesadas.
+      </p>
+      <div class="cta-row">
+        <a id="dl-win" class="btn btn-primary" href="https://github.com/antonio-ebarros/Guanaco/releases/latest" target="_blank" rel="noopener noreferrer">⬇ Baixar para Windows</a>
+        <a id="dl-linux" class="btn btn-secondary" href="https://github.com/antonio-ebarros/Guanaco/releases/latest" target="_blank" rel="noopener noreferrer">🐧 Baixar para Linux (.AppImage)</a>
+      </div>
+      <div class="hero-meta">
+        Gratuito para uso diário · Também disponível em <a id="dl-deb" href="https://github.com/antonio-ebarros/Guanaco/releases/latest" target="_blank" rel="noopener noreferrer">.deb (Ubuntu/Debian)</a> · <a href="https://github.com/antonio-ebarros/Guanaco" target="_blank" rel="noopener noreferrer">Código-fonte no GitHub</a>
+      </div>
+    </section>
+
+    <section id="diferenciais">
+      <div class="sec-head">
+        <h2>Por que o Guanaco é diferente?</h2>
+        <p>Enquanto a maioria dos apps de IA local foca apenas em usuários técnicos e consome muita memória, o Guanaco foi projetado para ser rápido em máquinas reais.</p>
+      </div>
+      <div class="grid-2">
+        <article class="card">
+          <div class="card-icon">⚡</div>
+          <h3>Ultraleve (Tauri + Rust)</h3>
+          <p>Diferente de clientes baseados em Electron/Chromium que gastam centenas de MB ou GB de RAM só para abrir a janela, o Guanaco usa interface nativa leve para sobrar memória para a IA.</p>
+        </article>
+        <article class="card">
+          <div class="card-icon">🛡️</div>
+          <h3>Feito para PCs reais</h3>
+          <p>Mede RAM e VRAM livres de verdade, reserva memória para o sistema operacional e evita travamentos com perfis <strong>Conservador</strong> e <strong>Equilibrado</strong>, além de botão de 1 clique para liberar memória.</p>
+        </article>
+        <article class="card">
+          <div class="card-icon">🚀</div>
+          <h3>Clicou, baixou, conversou</h3>
+          <p>Instala o motor local em 1 clique, recomenda modelos compatíveis com o seu hardware e mostra o tamanho exato em GB antes de baixar.</p>
+        </article>
+        <article class="card">
+          <div class="card-icon">🔊</div>
+          <h3>Voz neural offline e privacidade total</h3>
+          <p>Leitura em voz alta offline com <strong>Piper TTS</strong> (Português BR, Inglês e Chinês), Markdown ao vivo e zero conta, login ou telemetria.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="comparativo">
+      <div class="sec-head">
+        <h2>Guanaco vs. Outros Apps de IA Local</h2>
+        <p>Comparação prática de foco e custo para quem quer usar IA no próprio computador.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Recurso</th>
+              <th>Guanaco</th>
+              <th>Clientes Electron comuns</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Arquitetura da interface</strong></td>
+              <td class="ok">Nativa em Rust + Tauri (ultraleve)</td>
+              <td class="mid">Electron / Chromium (pesado na RAM)</td>
+            </tr>
+            <tr>
+              <td><strong>Proteção de RAM/VRAM e perfis seguros</strong></td>
+              <td class="ok">Automática para não travar o PC</td>
+              <td class="mid">Configuração manual ou ausente</td>
+            </tr>
+            <tr>
+              <td><strong>Voz neural offline (PT-BR / EN / ZH)</strong></td>
+              <td class="ok">Integrada com 1 clique (Piper TTS)</td>
+              <td class="mid">Raramente integrada offline</td>
+            </tr>
+            <tr>
+              <td><strong>Conta, login ou telemetria</strong></td>
+              <td class="ok">Zero — 100% offline</td>
+              <td class="mid">Varia por aplicativo</td>
+            </tr>
+            <tr>
+              <td><strong>Versão Pro / Avançada</strong></td>
+              <td class="ok">R$ 39 pagamento único (vitalício)</td>
+              <td class="mid">Assinaturas anuais ou US$ 149–349</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="pro">
+      <div class="pro-box">
+        <div class="pro-top">
+          <div>
+            <span class="pro-badge">✨ GUANACO PRO · APOIE O PROJETO</span>
+            <h2 style="margin:8px 0 4px;">Desbloqueie o controle total e apoie o desenvolvimento independente</h2>
+          </div>
+          <div class="pro-price">R$ 39 <span>pagamento único · vitalício</span></div>
+        </div>
+        <p style="margin:0;color:var(--dim);">
+          O Guanaco gratuito já resolve o uso diário sem limites artificiais. Ao adquirir o <strong>Guanaco Pro</strong>, você apoia o projeto e recebe na hora uma chave vitalícia 100% offline (sem mensalidade e sem conta) que libera:
+        </p>
+        <ul class="pro-list">
+          <li><strong>Pasta de Conhecimento (RAG Offline):</strong> converse com PDFs, DOCX, ODT e textos com citação da fonte</li>
+          <li><strong>Personalidades &amp; System Prompt editável:</strong> crie assistentes especializados</li>
+          <li><strong>Perfil Livre + Parâmetros Avançados:</strong> controle total de <code>temperature</code>, <code>num_ctx</code> e <code>num_gpu</code></li>
+          <li><strong>Importador de arquivos .GGUF locais</strong> direto na aba Modelos</li>
+          <li><strong>Suporte Multi-Motor:</strong> alterne entre Ollama e Mozilla llamafile</li>
+          <li><strong>Ativação vitalícia offline:</strong> chave criptográfica Ed25519 só sua</li>
+        </ul>
+        <div class="cta-row" style="justify-content:flex-start;margin-bottom:0;">
+          <a class="btn btn-pro" href="https://guanaco-license-webhook.guanaco-ia.workers.dev/comprar" target="_blank" rel="noopener noreferrer">✨ Adquirir Guanaco Pro (R$ 39)</a>
+          <a class="btn btn-secondary" href="https://github.com/antonio-ebarros/Guanaco/releases/latest" target="_blank" rel="noopener noreferrer">Baixar Versão Gratuita</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      Criado por <strong>Antonio E. Barros</strong> · Código aberto sob licença <strong>Apache-2.0</strong> ·
+      <a href="https://github.com/antonio-ebarros/Guanaco" target="_blank" rel="noopener noreferrer">github.com/antonio-ebarros/Guanaco</a>
+    </div>
+  </footer>
+
+  <script>
+    const root = document.documentElement;
+    const toggle = document.getElementById('theme-toggle');
+    const saved = localStorage.getItem('guanaco-site-theme');
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const applyTheme = dark => {
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      if (toggle) toggle.textContent = dark ? '☀️ Claro' : '🌙 Escuro';
+    };
+    applyTheme(saved ? saved === 'dark' : prefersDark);
+    toggle?.addEventListener('click', () => {
+      const next = root.getAttribute('data-theme') !== 'dark';
+      localStorage.setItem('guanaco-site-theme', next ? 'dark' : 'light');
+      applyTheme(next);
+    });
+
+    fetch('https://api.github.com/repos/antonio-ebarros/Guanaco/releases/latest')
+      .then(r => (r.ok ? r.json() : null))
+      .then(rel => {
+        if (!rel || !Array.isArray(rel.assets)) return;
+        const ver = (rel.tag_name || 'v1.0.0').replace(/^v/i, '');
+        const pill = document.getElementById('version-pill');
+        if (pill) pill.textContent = `✨ v${ver} · 100% Offline e Código Aberto (Apache-2.0)`;
+        const findAsset = ext => rel.assets.find(a => a.name.toLowerCase().endsWith(ext));
+        const win = findAsset('.exe') || findAsset('.msi');
+        const appImg = findAsset('.appimage');
+        const deb = findAsset('.deb');
+        if (win) document.getElementById('dl-win').href = win.browser_download_url;
+        if (appImg) document.getElementById('dl-linux').href = appImg.browser_download_url;
+        if (deb) document.getElementById('dl-deb').href = deb.browser_download_url;
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>
